@@ -1,5 +1,6 @@
 pub mod diagnostics;
 pub mod document;
+pub mod fidl;
 pub mod language;
 pub mod server;
 pub mod text;
