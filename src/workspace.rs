@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Url};
 
 use crate::document::Document;
+use crate::fidl::FidlIndex;
 use crate::language::Lang;
 
 /// All documents known to the server, whether open in the editor or
@@ -10,6 +11,7 @@ use crate::language::Lang;
 #[derive(Default)]
 pub struct Workspace {
     pub docs: HashMap<Url, Document>,
+    pub fidl: HashMap<Url, FidlIndex>,
     open: HashSet<Url>,
 }
 
@@ -23,13 +25,31 @@ impl Workspace {
             return false;
         };
         self.open.insert(uri.clone());
-        self.docs.insert(uri, Document::new(lang, text, version));
+        self.insert(uri, Document::new(lang, text, version));
         true
+    }
+
+    /// Adds or replaces a document and refreshes its index.
+    pub fn insert(&mut self, uri: Url, doc: Document) {
+        self.docs.insert(uri.clone(), doc);
+        self.reindex(&uri);
+    }
+
+    fn reindex(&mut self, uri: &Url) {
+        let Some(doc) = self.docs.get(uri) else { return };
+        match doc.lang {
+            Lang::Fidl => {
+                let idx = FidlIndex::build(doc);
+                self.fidl.insert(uri.clone(), idx);
+            }
+            Lang::Fdepl => {}
+        }
     }
 
     pub fn change(&mut self, uri: &Url, changes: Vec<TextDocumentContentChangeEvent>, version: i32) {
         if let Some(doc) = self.docs.get_mut(uri) {
             doc.apply_changes(changes, version);
+            self.reindex(uri);
         }
     }
 
