@@ -3,5 +3,6 @@ pub mod document;
 pub mod fidl;
 pub mod language;
 pub mod server;
+pub mod symbols;
 pub mod text;
 pub mod workspace;

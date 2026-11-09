@@ -24,3 +24,15 @@ fn initializes_and_reports_syntax_errors() {
     assert!(diags["diagnostics"].as_array().unwrap().is_empty());
     c.shutdown();
 }
+
+#[test]
+fn returns_document_symbols() {
+    let mut c = Client::start();
+    c.initialize(None);
+    let uri = "file:///tmp/francals-test/sym.fidl";
+    c.open(uri, "franca", "package a\ninterface I {\n  attribute Int8 x\n}\n");
+    let res = c.request("textDocument/documentSymbol", serde_json::json!({"textDocument": {"uri": uri}}));
+    assert_eq!(res[0]["name"], "I");
+    assert_eq!(res[0]["children"][0]["name"], "x");
+    c.shutdown();
+}

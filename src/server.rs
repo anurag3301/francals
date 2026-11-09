@@ -5,6 +5,8 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::diagnostics;
+use crate::language::Lang;
+use crate::symbols;
 use crate::workspace::Workspace;
 
 pub struct Backend {
@@ -41,6 +43,7 @@ impl LanguageServer for Backend {
                         ..Default::default()
                     },
                 )),
+                document_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -73,5 +76,16 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         self.ws.write().unwrap().close(&uri);
         self.client.publish_diagnostics(uri, vec![], None).await;
+    }
+
+    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+        let uri = params.text_document.uri;
+        let ws = self.ws.read().unwrap();
+        let Some(doc) = ws.get(&uri) else { return Ok(None) };
+        let symbols = match doc.lang {
+            Lang::Fidl => ws.fidl.get(&uri).map(|idx| symbols::fidl_symbols(doc, idx)),
+            Lang::Fdepl => None,
+        };
+        Ok(symbols.map(DocumentSymbolResponse::Nested))
     }
 }
