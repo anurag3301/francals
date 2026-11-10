@@ -1,6 +1,7 @@
 pub mod diagnostics;
 pub mod document;
 pub mod fidl;
+pub mod hover;
 pub mod language;
 pub mod loader;
 pub mod navigation;

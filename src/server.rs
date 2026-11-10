@@ -5,6 +5,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::diagnostics;
+use crate::hover;
 use crate::language::Lang;
 use crate::loader;
 use crate::navigation;
@@ -67,6 +68,7 @@ impl LanguageServer for Backend {
                     },
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
@@ -164,5 +166,11 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         Ok(Some(navigation::references(&ws, &target.decl, params.context.include_declaration)))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let p = params.text_document_position_params;
+        let ws = self.ws.read().unwrap();
+        Ok(hover::hover(&ws, &p.text_document.uri, p.position))
     }
 }
