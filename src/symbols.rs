@@ -1,7 +1,8 @@
-use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
+use tower_lsp::lsp_types::{DocumentSymbol, Location, SymbolInformation, SymbolKind};
 
 use crate::document::Document;
 use crate::fidl::{DeclKind, FidlIndex};
+use crate::workspace::Workspace;
 
 fn symbol_kind(kind: DeclKind) -> SymbolKind {
     match kind {
@@ -47,6 +48,36 @@ fn build(doc: &Document, idx: &FidlIndex, parent: Option<usize>) -> Vec<Document
             }
         })
         .collect()
+}
+
+/// Declarations across the workspace whose name contains `query`.
+#[allow(deprecated)]
+pub fn workspace_symbols(ws: &Workspace, query: &str) -> Vec<SymbolInformation> {
+    let needle = query.to_lowercase();
+    let mut out = Vec::new();
+    for (uri, idx) in &ws.fidl {
+        let Some(doc) = ws.get(uri) else { continue };
+        for d in &idx.decls {
+            if d.name.is_empty() || !d.name.to_lowercase().contains(&needle) {
+                continue;
+            }
+            if matches!(d.kind, DeclKind::Argument | DeclKind::Field | DeclKind::Enumerator) && needle.is_empty() {
+                continue;
+            }
+            out.push(SymbolInformation {
+                name: d.name.clone(),
+                kind: symbol_kind(d.kind),
+                tags: None,
+                deprecated: None,
+                location: Location::new(uri.clone(), doc.lines.range(&doc.text, d.name_span.start, d.name_span.end)),
+                container_name: d.parent.map(|p| idx.decls[p].fqn.clone()),
+            });
+            if out.len() >= 500 {
+                return out;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
