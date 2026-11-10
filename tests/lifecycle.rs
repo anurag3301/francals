@@ -67,3 +67,17 @@ fn completes_keywords_and_types() {
     assert!(labels.contains(&"UInt8"));
     c.shutdown();
 }
+
+#[test]
+fn formats_documents() {
+    let mut c = Client::start();
+    c.initialize(None);
+    let uri = "file:///tmp/francals-test/fmt.fidl";
+    c.open(uri, "franca", "package a\ninterface I {\nattribute Int8 x\n}\n");
+    let res = c.request(
+        "textDocument/formatting",
+        serde_json::json!({"textDocument": {"uri": uri}, "options": {"tabSize": 2, "insertSpaces": true}}),
+    );
+    assert_eq!(res[0]["newText"], "package a\ninterface I {\n  attribute Int8 x\n}\n");
+    c.shutdown();
+}

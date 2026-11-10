@@ -6,6 +6,7 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::completion;
 use crate::diagnostics;
+use crate::format;
 use crate::hover;
 use crate::language::Lang;
 use crate::loader;
@@ -74,6 +75,7 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec![".".into(), ">".into()]),
                     ..Default::default()
                 }),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 rename_provider: Some(OneOf::Right(RenameOptions {
                     prepare_provider: Some(true),
                     work_done_progress_options: Default::default(),
@@ -202,5 +204,10 @@ impl LanguageServer for Backend {
         let ws = self.ws.read().unwrap();
         let items = completion::complete(&ws, &p.text_document.uri, p.position);
         Ok(Some(CompletionResponse::Array(items)))
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let ws = self.ws.read().unwrap();
+        Ok(ws.get(&params.text_document.uri).map(|doc| format::format_document(doc, &params.options)))
     }
 }

@@ -2,6 +2,7 @@ pub mod completion;
 pub mod diagnostics;
 pub mod document;
 pub mod fidl;
+pub mod format;
 pub mod hover;
 pub mod language;
 pub mod loader;
