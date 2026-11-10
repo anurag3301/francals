@@ -9,6 +9,7 @@ use crate::hover;
 use crate::language::Lang;
 use crate::loader;
 use crate::navigation;
+use crate::rename;
 use crate::symbols;
 use crate::workspace::Workspace;
 
@@ -68,6 +69,10 @@ impl LanguageServer for Backend {
                     },
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
@@ -172,5 +177,18 @@ impl LanguageServer for Backend {
         let p = params.text_document_position_params;
         let ws = self.ws.read().unwrap();
         Ok(hover::hover(&ws, &p.text_document.uri, p.position))
+    }
+
+    async fn prepare_rename(&self, params: TextDocumentPositionParams) -> Result<Option<PrepareRenameResponse>> {
+        let ws = self.ws.read().unwrap();
+        Ok(rename::prepare(&ws, &params.text_document.uri, params.position)
+            .map(|(range, placeholder)| PrepareRenameResponse::RangeWithPlaceholder { range, placeholder }))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let p = params.text_document_position;
+        let ws = self.ws.read().unwrap();
+        rename::rename(&ws, &p.text_document.uri, p.position, &params.new_name)
+            .map_err(tower_lsp::jsonrpc::Error::invalid_params)
     }
 }

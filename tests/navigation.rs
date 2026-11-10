@@ -46,3 +46,28 @@ fn definition_and_references_across_files() {
     assert_eq!(refs.as_array().unwrap().len(), 2);
     c.shutdown();
 }
+
+#[test]
+fn renames_across_files() {
+    let (dir, root) = project();
+    let mut c = Client::start();
+    c.initialize(Some(&root));
+    let main = format!("{root}main.fidl");
+    c.open(&main, "franca", MAIN);
+
+    let prep = c.request(
+        "textDocument/prepareRename",
+        json!({"textDocument": {"uri": main}, "position": {"line": 3, "character": 22}}),
+    );
+    assert_eq!(prep["placeholder"], "Point");
+
+    let edit = c.request(
+        "textDocument/rename",
+        json!({"textDocument": {"uri": main}, "position": {"line": 3, "character": 22}, "newName": "Vec2"}),
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    let changes = edit["changes"].as_object().unwrap();
+    assert_eq!(changes.len(), 2);
+    assert!(changes.values().flat_map(|v| v.as_array().unwrap()).all(|e| e["newText"] == "Vec2"));
+    c.shutdown();
+}

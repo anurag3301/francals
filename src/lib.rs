@@ -5,6 +5,7 @@ pub mod hover;
 pub mod language;
 pub mod loader;
 pub mod navigation;
+pub mod rename;
 pub mod resolve;
 pub mod server;
 pub mod symbols;
