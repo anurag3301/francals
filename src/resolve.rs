@@ -39,7 +39,7 @@ impl Workspace {
     }
 
     /// Namespaces searched for names inside the interface `scope`, innermost first.
-    fn scope_chain(&self, uri: &Url, idx: &FidlIndex, scope: usize) -> Vec<String> {
+    pub(crate) fn scope_chain(&self, uri: &Url, idx: &FidlIndex, scope: usize) -> Vec<String> {
         let mut out = vec![idx.decls[scope].fqn.clone()];
         let mut current = DeclId { uri: uri.clone(), idx: scope };
         for _ in 0..16 {
@@ -62,7 +62,7 @@ impl Workspace {
         out
     }
 
-    fn candidates(&self, uri: &Url, idx: &FidlIndex, r: &Ref, name: &str) -> Vec<String> {
+    pub(crate) fn candidates(&self, uri: &Url, idx: &FidlIndex, r: &Ref, name: &str) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(scope) = r.scope {
             for ns in self.scope_chain(uri, idx, scope) {

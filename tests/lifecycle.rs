@@ -52,3 +52,18 @@ fn indexes_workspace_folder_and_imports() {
     assert!(res.as_array().unwrap().iter().any(|s| s["name"] == "S" && s["location"]["uri"].as_str().unwrap().ends_with("a.fidl")));
     c.shutdown();
 }
+
+#[test]
+fn completes_keywords_and_types() {
+    let mut c = Client::start();
+    c.initialize(None);
+    let uri = "file:///tmp/francals-test/comp.fidl";
+    c.open(uri, "franca", "package a\ninterface I {\n  attribute \n}\n");
+    let res = c.request(
+        "textDocument/completion",
+        serde_json::json!({"textDocument": {"uri": uri}, "position": {"line": 2, "character": 12}}),
+    );
+    let labels: Vec<&str> = res.as_array().unwrap().iter().map(|i| i["label"].as_str().unwrap()).collect();
+    assert!(labels.contains(&"UInt8"));
+    c.shutdown();
+}

@@ -4,6 +4,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
+use crate::completion;
 use crate::diagnostics;
 use crate::hover;
 use crate::language::Lang;
@@ -69,6 +70,10 @@ impl LanguageServer for Backend {
                     },
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".into(), ">".into()]),
+                    ..Default::default()
+                }),
                 rename_provider: Some(OneOf::Right(RenameOptions {
                     prepare_provider: Some(true),
                     work_done_progress_options: Default::default(),
@@ -190,5 +195,12 @@ impl LanguageServer for Backend {
         let ws = self.ws.read().unwrap();
         rename::rename(&ws, &p.text_document.uri, p.position, &params.new_name)
             .map_err(tower_lsp::jsonrpc::Error::invalid_params)
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let p = params.text_document_position;
+        let ws = self.ws.read().unwrap();
+        let items = completion::complete(&ws, &p.text_document.uri, p.position);
+        Ok(Some(CompletionResponse::Array(items)))
     }
 }
