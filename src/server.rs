@@ -36,7 +36,7 @@ impl Backend {
         let (diags, version) = {
             let ws = self.ws.read().unwrap();
             match ws.get(&uri) {
-                Some(doc) => (diagnostics::syntax_diagnostics(doc), Some(doc.version)),
+                Some(doc) => (diagnostics::diagnostics(&ws, &uri), Some(doc.version)),
                 None => return,
             }
         };
@@ -128,7 +128,7 @@ impl LanguageServer for Backend {
             ws.change(&uri, params.content_changes, params.text_document.version);
             ws.load_imports(&uri);
         }
-        self.publish(uri).await;
+        self.refresh_open_diagnostics().await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
