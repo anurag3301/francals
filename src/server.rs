@@ -6,6 +6,7 @@ use tower_lsp::{Client, LanguageServer};
 
 use crate::diagnostics;
 use crate::language::Lang;
+use crate::loader;
 use crate::symbols;
 use crate::workspace::Workspace;
 
@@ -17,6 +18,16 @@ pub struct Backend {
 impl Backend {
     pub fn new(client: Client) -> Self {
         Backend { client, ws: Arc::new(RwLock::new(Workspace::default())) }
+    }
+
+    async fn refresh_open_diagnostics(&self) {
+        let open: Vec<Url> = {
+            let ws = self.ws.read().unwrap();
+            ws.docs.keys().filter(|u| ws.is_open(u)).cloned().collect()
+        };
+        for uri in open {
+            self.publish(uri).await;
+        }
     }
 
     async fn publish(&self, uri: Url) {
@@ -33,7 +44,18 @@ impl Backend {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        let mut roots: Vec<std::path::PathBuf> = params
+            .workspace_folders
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|f| f.uri.to_file_path().ok())
+            .collect();
+        #[allow(deprecated)]
+        if roots.is_empty() {
+            roots.extend(params.root_uri.and_then(|u| u.to_file_path().ok()));
+        }
+        self.ws.write().unwrap().roots = roots;
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
@@ -44,6 +66,7 @@ impl LanguageServer for Backend {
                     },
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -53,6 +76,26 @@ impl LanguageServer for Backend {
         })
     }
 
+    async fn initialized(&self, _: InitializedParams) {
+        let ws = self.ws.clone();
+        let roots = ws.read().unwrap().roots.clone();
+        let loaded = tokio::task::spawn_blocking(move || {
+            for root in roots {
+                for path in loader::find_sources(&root) {
+                    let Some((uri, doc)) = loader::read_document(&path) else { continue };
+                    let mut ws = ws.write().unwrap();
+                    if !ws.docs.contains_key(&uri) {
+                        ws.insert(uri, doc);
+                    }
+                }
+            }
+        })
+        .await;
+        if loaded.is_ok() {
+            self.refresh_open_diagnostics().await;
+        }
+    }
+
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
@@ -60,7 +103,14 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let doc = params.text_document;
         let uri = doc.uri.clone();
-        let opened = self.ws.write().unwrap().open(doc.uri, &doc.language_id, doc.text, doc.version);
+        let opened = {
+            let mut ws = self.ws.write().unwrap();
+            let opened = ws.open(doc.uri, &doc.language_id, doc.text, doc.version);
+            if opened {
+                ws.load_imports(&uri);
+            }
+            opened
+        };
         if opened {
             self.publish(uri).await;
         }
@@ -68,7 +118,11 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.ws.write().unwrap().change(&uri, params.content_changes, params.text_document.version);
+        {
+            let mut ws = self.ws.write().unwrap();
+            ws.change(&uri, params.content_changes, params.text_document.version);
+            ws.load_imports(&uri);
+        }
         self.publish(uri).await;
     }
 
@@ -87,5 +141,10 @@ impl LanguageServer for Backend {
             Lang::Fdepl => None,
         };
         Ok(symbols.map(DocumentSymbolResponse::Nested))
+    }
+
+    async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<Vec<SymbolInformation>>> {
+        let ws = self.ws.read().unwrap();
+        Ok(Some(symbols::workspace_symbols(&ws, &params.query)))
     }
 }

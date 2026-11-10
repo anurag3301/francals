@@ -128,6 +128,7 @@ dependencies = [
  "tower-lsp",
  "tree-sitter",
  "tree-sitter-language",
+ "url",
 ]
 
 [[package]]

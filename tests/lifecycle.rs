@@ -36,3 +36,19 @@ fn returns_document_symbols() {
     assert_eq!(res[0]["children"][0]["name"], "x");
     c.shutdown();
 }
+
+#[test]
+fn indexes_workspace_folder_and_imports() {
+    let dir = std::env::temp_dir().join(format!("francals-it-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.fidl"), "package p\ntypeCollection T { struct S { Int8 f } }\n").unwrap();
+    let root = url::Url::from_directory_path(&dir).unwrap().to_string();
+    let mut c = Client::start();
+    c.initialize(Some(&root));
+    let uri = format!("{root}b.fidl");
+    c.open(&uri, "franca", "package q\nimport p.* from \"a.fidl\"\n");
+    let res = c.request("workspace/symbol", serde_json::json!({"query": "S"}));
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(res.as_array().unwrap().iter().any(|s| s["name"] == "S" && s["location"]["uri"].as_str().unwrap().ends_with("a.fidl")));
+    c.shutdown();
+}
