@@ -2,6 +2,7 @@ pub mod check;
 pub mod completion;
 pub mod diagnostics;
 pub mod document;
+pub mod fdepl;
 pub mod fidl;
 pub mod format;
 pub mod hover;
