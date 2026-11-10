@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Url};
 
 use crate::document::Document;
+use crate::fdepl::FdeplIndex;
 use crate::fidl::FidlIndex;
 use crate::language::Lang;
 use crate::loader;
@@ -21,6 +22,7 @@ pub struct DeclId {
 pub struct Workspace {
     pub docs: HashMap<Url, Document>,
     pub fidl: HashMap<Url, FidlIndex>,
+    pub fdepl: HashMap<Url, FdeplIndex>,
     pub roots: Vec<PathBuf>,
     /// Fully qualified name -> declarations with that name, across all files.
     pub by_fqn: HashMap<String, Vec<DeclId>>,
@@ -58,7 +60,10 @@ impl Workspace {
                 self.register_names(uri, &idx);
                 self.fidl.insert(uri.clone(), idx);
             }
-            Lang::Fdepl => {}
+            Lang::Fdepl => {
+                let idx = FdeplIndex::build(doc);
+                self.fdepl.insert(uri.clone(), idx);
+            }
         }
     }
 
@@ -130,9 +135,12 @@ impl Workspace {
             if !seen.insert(current.clone()) {
                 continue;
             }
-            let targets: Vec<String> = match self.fidl.get(&current) {
-                Some(idx) => idx.imports.iter().map(|i| i.uri.clone()).collect(),
-                None => continue,
+            let targets: Vec<String> = if let Some(idx) = self.fidl.get(&current) {
+                idx.imports.iter().map(|i| i.uri.clone()).collect()
+            } else if let Some(idx) = self.fdepl.get(&current) {
+                idx.imports.iter().filter(|i| i.is_uri && !i.is_external()).map(|i| i.target.clone()).collect()
+            } else {
+                continue;
             };
             for t in targets {
                 let Some(resolved) = self.resolve_import(&current, &t) else { continue };
@@ -188,6 +196,21 @@ mod tests {
         ws.close(&u);
         assert!(!ws.is_open(&u));
         assert!(ws.get(&u).is_some());
+    }
+
+    #[test]
+    fn follows_fdepl_imports() {
+        let dir = temp_dir("fdepl-imports");
+        std::fs::write(dir.join("a.fidl"), "package a\ninterface I { }\n").unwrap();
+        std::fs::write(dir.join("spec.fdepl"), "package s\nspecification s.S { for interface { P: Integer; } }\n").unwrap();
+        let main = dir.join("main.fdepl");
+        std::fs::write(&main, "package m\nimport \"spec.fdepl\"\nimport \"a.fidl\"\n").unwrap();
+        let mut ws = Workspace::default();
+        let main_uri = ws.load_file(&main).unwrap();
+        ws.load_imports(&main_uri);
+        let found = ws.by_fqn.contains_key("a.I") && ws.fdepl.len() == 2;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(found);
     }
 
     #[test]
