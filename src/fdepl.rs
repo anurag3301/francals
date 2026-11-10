@@ -375,11 +375,7 @@ fn segment(text: &str, span: Span) -> Segment {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::language::Lang;
-
-    pub const SAMPLE: &str = r#"package org.example.deploy
+pub const SAMPLE: &str = r#"package org.example.deploy
 
 import "platform:/plugin/x/spec.fdepl"
 import "local.fidl"
@@ -411,6 +407,12 @@ define org.example.Spec for interface org.example.demo.Demo {
     }
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::language::Lang;
+
 
     fn index() -> FdeplIndex {
         FdeplIndex::build(&Document::new(Lang::Fdepl, SAMPLE.into(), 0))

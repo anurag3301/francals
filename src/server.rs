@@ -155,7 +155,7 @@ impl LanguageServer for Backend {
         let Some(doc) = ws.get(&uri) else { return Ok(None) };
         let symbols = match doc.lang {
             Lang::Fidl => ws.fidl.get(&uri).map(|idx| symbols::fidl_symbols(doc, idx)),
-            Lang::Fdepl => None,
+            Lang::Fdepl => ws.fdepl.get(&uri).map(|idx| symbols::fdepl_symbols(doc, idx)),
         };
         Ok(symbols.map(DocumentSymbolResponse::Nested))
     }
