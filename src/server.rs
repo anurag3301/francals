@@ -7,6 +7,7 @@ use tower_lsp::{Client, LanguageServer};
 use crate::diagnostics;
 use crate::language::Lang;
 use crate::loader;
+use crate::navigation;
 use crate::symbols;
 use crate::workspace::Workspace;
 
@@ -66,6 +67,8 @@ impl LanguageServer for Backend {
                     },
                 )),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
@@ -146,5 +149,20 @@ impl LanguageServer for Backend {
     async fn symbol(&self, params: WorkspaceSymbolParams) -> Result<Option<Vec<SymbolInformation>>> {
         let ws = self.ws.read().unwrap();
         Ok(Some(symbols::workspace_symbols(&ws, &params.query)))
+    }
+
+    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+        let p = params.text_document_position_params;
+        let ws = self.ws.read().unwrap();
+        Ok(navigation::definition(&ws, &p.text_document.uri, p.position).map(GotoDefinitionResponse::Scalar))
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let p = params.text_document_position;
+        let ws = self.ws.read().unwrap();
+        let Some(target) = navigation::target_at(&ws, &p.text_document.uri, p.position) else {
+            return Ok(None);
+        };
+        Ok(Some(navigation::references(&ws, &target.decl, params.context.include_declaration)))
     }
 }

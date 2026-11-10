@@ -3,6 +3,7 @@ pub mod document;
 pub mod fidl;
 pub mod language;
 pub mod loader;
+pub mod navigation;
 pub mod resolve;
 pub mod server;
 pub mod symbols;
