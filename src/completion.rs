@@ -6,7 +6,9 @@
 
 use std::collections::BTreeSet;
 
-use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position, Url};
+use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, Documentation, MarkupContent, MarkupKind, Position, Url,
+};
 
 use crate::fidl::{DeclKind, FidlIndex, Ref, RefKind, Segment};
 use crate::workspace::{DeclId, Workspace};
@@ -373,19 +375,25 @@ fn members(
                 && kinds.contains(&d.kind)
                 && d.name == name
             {
-                items.push(decl_item(&name, d.kind, Some(d.detail.clone()), &name));
+                items.push(decl_item(&name, d, Some(d.detail.clone())));
             }
         }
     }
     items
 }
 
-fn decl_item(label: &str, kind: DeclKind, detail: Option<String>, insert: &str) -> CompletionItem {
+fn decl_item(label: &str, d: &crate::fidl::Decl, detail: Option<String>) -> CompletionItem {
+    let mut docs = format!("```franca\n{}\n```", d.detail);
+    if let Some(doc) = &d.doc {
+        docs.push_str("\n\n");
+        docs.push_str(doc);
+    }
     CompletionItem {
         label: label.to_string(),
-        kind: Some(item_kind(kind)),
+        kind: Some(item_kind(d.kind)),
         detail,
-        insert_text: Some(insert.to_string()),
+        insert_text: Some(label.to_string()),
+        documentation: Some(Documentation::MarkupContent(MarkupContent { kind: MarkupKind::Markdown, value: docs })),
         ..Default::default()
     }
 }
@@ -424,7 +432,7 @@ fn qualified(
         for (name, id) in children_of(ws, &ns) {
             let Some(d) = ws.decl(&id) else { continue };
             if d.name == name && wants(want, d.kind) && seen.insert(name.clone()) {
-                items.push(decl_item(&name, d.kind, Some(d.detail.clone()), &name));
+                items.push(decl_item(&name, d, Some(d.detail.clone())));
             }
         }
         let prefix = format!("{ns}.");
@@ -473,7 +481,7 @@ fn visible_decls(ws: &Workspace, uri: &Url, idx: &FidlIndex, scope: Option<usize
             ws.resolve_in(uri, idx, &r).is_some_and(|res| &res.target == id)
         });
         let Some(best) = best else { continue };
-        let mut item = decl_item(&best, d.kind, Some(d.fqn.clone()), &best);
+        let mut item = decl_item(&best, d, Some(d.fqn.clone()));
         item.sort_text = Some(format!("{}{}", best.matches('.').count(), best));
         items.push(item);
         if items.len() >= 2000 {
@@ -586,5 +594,17 @@ mod tests {
         assert!(complete_at("package a\n// inter|\n").is_empty());
         assert!(complete_at("package a\n<** @description: x |").is_empty());
         assert!(complete_at("package a\nimport b.* from \"x|\"").is_empty());
+    }
+
+    #[test]
+    fn declarations_carry_documentation() {
+        let uri = Url::parse("file:///ws/m.fidl").unwrap();
+        let mut ws = Workspace::default();
+        let src = "package a\ninterface I {\n <** @description: A point. **>\n struct Pt { Int8 x }\n attribute Pt p\n}\n";
+        ws.open(uri.clone(), "franca", src.into(), 1);
+        let items = complete(&ws, &uri, Position::new(4, 11));
+        let pt = items.iter().find(|i| i.label == "Pt").unwrap();
+        let Some(Documentation::MarkupContent(m)) = &pt.documentation else { panic!("no docs") };
+        assert!(m.value.contains("struct Pt") && m.value.contains("A point."), "{}", m.value);
     }
 }
