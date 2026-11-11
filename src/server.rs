@@ -81,6 +81,7 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                document_highlight_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
@@ -164,6 +165,12 @@ impl LanguageServer for Backend {
         let p = params.text_document_position_params;
         let ws = self.ws.read().unwrap();
         Ok(navigation::definition(&ws, &p.text_document.uri, p.position).map(GotoDefinitionResponse::Scalar))
+    }
+
+    async fn document_highlight(&self, params: DocumentHighlightParams) -> Result<Option<Vec<DocumentHighlight>>> {
+        let p = params.text_document_position_params;
+        let ws = self.ws.read().unwrap();
+        Ok(Some(navigation::highlights(&ws, &p.text_document.uri, p.position)))
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
