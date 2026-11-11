@@ -2,7 +2,10 @@
 
 use tower_lsp::lsp_types::{Location, Position, Url};
 
+use crate::fdepl_resolve::FdeplTarget;
+use crate::fdepl::FdeplRefKind;
 use crate::fidl::Span;
+use crate::language::Lang;
 use crate::workspace::{DeclId, Workspace};
 
 pub fn location(ws: &Workspace, uri: &Url, span: Span) -> Option<Location> {
@@ -19,6 +22,9 @@ pub struct Target {
 
 pub fn target_at(ws: &Workspace, uri: &Url, pos: Position) -> Option<Target> {
     let doc = ws.get(uri)?;
+    if doc.lang == Lang::Fdepl {
+        return fdepl_target_at(ws, uri, pos);
+    }
     let idx = ws.fidl.get(uri)?;
     let offset = doc.lines.offset(&doc.text, pos);
     if let Some(i) = idx.decl_at(offset) {
@@ -37,7 +43,46 @@ pub fn target_at(ws: &Workspace, uri: &Url, pos: Position) -> Option<Target> {
     Some(Target { decl: resolved.target, span })
 }
 
+/// The Franca declaration an fdepl identifier refers to.
+fn fdepl_target_at(ws: &Workspace, uri: &Url, pos: Position) -> Option<Target> {
+    let doc = ws.get(uri)?;
+    let idx = ws.fdepl.get(uri)?;
+    let offset = doc.lines.offset(&doc.text, pos);
+    let r = idx.ref_at(offset)?;
+    match ws.resolve_fdepl(uri, r)? {
+        FdeplTarget::Fidl(decl) => {
+            let span = idx.refs[r].segments.last()?.span.clone();
+            Some(Target { decl, span })
+        }
+        _ => None,
+    }
+}
+
+fn fdepl_definition(ws: &Workspace, uri: &Url, pos: Position) -> Option<Location> {
+    let doc = ws.get(uri)?;
+    let idx = ws.fdepl.get(uri)?;
+    let offset = doc.lines.offset(&doc.text, pos);
+    if let Some(import) = idx.imports.iter().find(|i| i.span.start <= offset && offset <= i.span.end) {
+        if import.is_external() {
+            return None;
+        }
+        let target = ws.resolve_import(uri, &import.target)?;
+        ws.docs.get(&target)?;
+        return Some(Location::new(target, Default::default()));
+    }
+    let r = idx.ref_at(offset)?;
+    match ws.resolve_fdepl(uri, r)? {
+        FdeplTarget::Fidl(id) => location(ws, &id.uri, ws.decl(&id)?.name_span.clone()),
+        FdeplTarget::Spec(u, i) | FdeplTarget::Property(u, i) => {
+            location(ws, &u, ws.fdepl_decl(&u, i)?.name_span.clone())
+        }
+    }
+}
+
 pub fn definition(ws: &Workspace, uri: &Url, pos: Position) -> Option<Location> {
+    if ws.get(uri)?.lang == Lang::Fdepl {
+        return fdepl_definition(ws, uri, pos);
+    }
     if let Some(loc) = import_target(ws, uri, pos) {
         return Some(loc);
     }
@@ -76,6 +121,18 @@ pub fn references(ws: &Workspace, target: &DeclId, include_declaration: bool) ->
             }
             let span = r.segments[resolved.matched - 1].span.clone();
             out.extend(location(ws, uri, span));
+        }
+    }
+    let mut uris: Vec<&Url> = ws.fdepl.keys().collect();
+    uris.sort();
+    for uri in uris {
+        for (i, r) in ws.fdepl[uri].refs.iter().enumerate() {
+            if !matches!(r.kind, FdeplRefKind::Target | FdeplRefKind::InterfaceValue) {
+                continue;
+            }
+            if ws.resolve_fdepl(uri, i) == Some(FdeplTarget::Fidl(target.clone())) {
+                out.extend(location(ws, uri, r.segments.last().unwrap().span.clone()));
+            }
         }
     }
     out
@@ -140,5 +197,49 @@ mod tests {
     fn nothing_under_whitespace() {
         let ws = setup();
         assert!(definition(&ws, &uri("main.fidl"), Position::new(0, 0)).is_none());
+    }
+
+    fn fdepl_setup() -> Workspace {
+        let mut ws = setup();
+        ws.open(
+            uri("spec.fdepl"),
+            "fdepl",
+            "package s\nspecification s.Spec {\n for interface { Port: Integer; }\n}\n".into(),
+            1,
+        );
+        ws.open(
+            uri("d.fdepl"),
+            "fdepl",
+            "package d\nimport \"spec.fdepl\"\ndefine s.Spec for interface org.app.I {\n Port = 1\n method m { }\n}\n".into(),
+            1,
+        );
+        ws
+    }
+
+    #[test]
+    fn fdepl_definitions() {
+        let ws = fdepl_setup();
+        let d = uri("d.fdepl");
+        let spec = definition(&ws, &d, Position::new(2, 10)).unwrap();
+        assert_eq!((spec.uri, spec.range.start.line), (uri("spec.fdepl"), 1));
+        let iface = definition(&ws, &d, Position::new(2, 35)).unwrap();
+        assert_eq!((iface.uri, iface.range.start.line), (uri("main.fidl"), 2));
+        let method = definition(&ws, &d, Position::new(4, 8)).unwrap();
+        assert_eq!((method.uri, method.range.start.line), (uri("main.fidl"), 4));
+        let prop = definition(&ws, &d, Position::new(3, 2)).unwrap();
+        assert_eq!((prop.uri, prop.range.start.line), (uri("spec.fdepl"), 2));
+        let import = definition(&ws, &d, Position::new(1, 10)).unwrap();
+        assert_eq!(import.uri, uri("spec.fdepl"));
+    }
+
+    #[test]
+    fn fidl_references_include_deployments() {
+        let ws = fdepl_setup();
+        let target = target_at(&ws, &uri("main.fidl"), Position::new(2, 10)).unwrap();
+        let refs = references(&ws, &target.decl, false);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].uri, uri("d.fdepl"));
+        let from_fdepl = target_at(&ws, &uri("d.fdepl"), Position::new(2, 35)).unwrap();
+        assert_eq!(from_fdepl.decl, target.decl);
     }
 }
