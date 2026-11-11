@@ -36,6 +36,20 @@ impl Workspace {
         None
     }
 
+    /// An interface or type collection named by a deployment.
+    pub fn fdepl_toplevel(&self, uri: &Url, name: &str) -> Option<DeclId> {
+        let pkg = self.fdepl.get(uri).and_then(|i| i.package.as_deref());
+        self.find_fidl(uri, pkg, name, |k| matches!(k, DeclKind::Interface | DeclKind::TypeCollection))
+            .or_else(|| self.find_anonymous_collection(name))
+    }
+
+    /// The declaration called `name` directly below `parent`.
+    pub fn fidl_member(&self, parent: &DeclId, name: &str) -> Option<DeclId> {
+        let fqn = format!("{}.{name}", self.decl(parent)?.fqn);
+        let list = self.by_fqn.get(&fqn)?;
+        list.iter().find(|d| d.uri == parent.uri).or_else(|| list.first()).cloned()
+    }
+
     /// An anonymous `typeCollection`, which deployments name by its package.
     fn find_anonymous_collection(&self, name: &str) -> Option<DeclId> {
         let mut uris: Vec<&Url> = self.fidl.keys().collect();
@@ -88,21 +102,14 @@ impl Workspace {
             }
             FdeplRefKind::Target => match r.parent {
                 None => {
-                    let name = r.full_name();
-                    let d = self
-                        .find_fidl(uri, idx.package.as_deref(), &name, |k| {
-                            matches!(k, DeclKind::Interface | DeclKind::TypeCollection)
-                        })
-                        .or_else(|| self.find_anonymous_collection(&name))?;
+                    let d = self.fdepl_toplevel(uri, &r.full_name())?;
                     Some(FdeplTarget::Fidl(d))
                 }
                 Some(p) if depth < 8 => {
                     let Some(FdeplTarget::Fidl(parent)) = self.resolve_fdepl_in(uri, idx, p, depth + 1) else {
                         return None;
                     };
-                    let parent_fqn = self.decl(&parent)?.fqn.clone();
-                    let fqn = format!("{parent_fqn}.{}", r.full_name());
-                    self.by_fqn.get(&fqn)?.iter().find(|d| d.uri == parent.uri).or_else(|| self.by_fqn[&fqn].first()).cloned().map(FdeplTarget::Fidl)
+                    self.fidl_member(&parent, &r.full_name()).map(FdeplTarget::Fidl)
                 }
                 _ => None,
             },
