@@ -3,6 +3,7 @@ pub mod completion;
 pub mod diagnostics;
 pub mod document;
 pub mod fdepl;
+pub mod fdepl_completion;
 pub mod fdepl_resolve;
 pub mod fidl;
 pub mod format;

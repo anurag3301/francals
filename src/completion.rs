@@ -47,7 +47,7 @@ struct Context {
 }
 
 #[derive(Debug, PartialEq)]
-enum Tok {
+pub(crate) enum Tok {
     Word(String),
     Open,
     Close,
@@ -56,15 +56,15 @@ enum Tok {
     Other,
 }
 
-struct Token {
-    tok: Tok,
-    start: usize,
-    end: usize,
+pub(crate) struct Token {
+    pub(crate) tok: Tok,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 /// Tokenizes `text[..end]`. Returns `None` if `end` is inside a comment,
 /// annotation or string, where completion makes no sense.
-fn lex(text: &str, end: usize) -> Option<Vec<Token>> {
+pub(crate) fn lex(text: &str, end: usize) -> Option<Vec<Token>> {
     let src = &text[..end];
     let b = src.as_bytes();
     let mut i = 0;
@@ -220,11 +220,11 @@ fn context(text: &str, offset: usize) -> Option<Context> {
     Some(Context { block, units, qualifier })
 }
 
-fn partial_len(text: &str, offset: usize) -> usize {
+pub(crate) fn partial_len(text: &str, offset: usize) -> usize {
     text[..offset].bytes().rev().take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'^').count()
 }
 
-fn keyword_items(words: &[&str]) -> Vec<CompletionItem> {
+pub(crate) fn keyword_items(words: &[&str]) -> Vec<CompletionItem> {
     words
         .iter()
         .map(|w| CompletionItem {
@@ -286,6 +286,9 @@ fn type_context(ctx: &Context) -> Option<Want> {
 }
 
 pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem> {
+    if ws.get(uri).is_some_and(|d| d.lang == crate::language::Lang::Fdepl) {
+        return crate::fdepl_completion::complete(ws, uri, pos);
+    }
     let (Some(doc), Some(idx)) = (ws.get(uri), ws.fidl.get(uri)) else { return Vec::new() };
     let offset = doc.lines.offset(&doc.text, pos);
     let Some(ctx) = context(&doc.text, offset) else { return Vec::new() };
