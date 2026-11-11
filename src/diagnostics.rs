@@ -4,6 +4,8 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 use tree_sitter::Node;
 
 use crate::document::Document;
+use crate::fdepl::FdeplRefKind;
+use crate::fdepl_resolve::FdeplTarget;
 use crate::fidl::{DeclKind, RefKind, Span};
 use crate::language::Lang;
 use crate::workspace::Workspace;
@@ -23,6 +25,9 @@ pub fn diagnostics(ws: &Workspace, uri: &Url) -> Vec<Diagnostic> {
     let mut out = syntax_diagnostics(doc);
     if doc.lang == Lang::Fidl && !doc.root().has_error() {
         out.extend(fidl_semantic(ws, uri, doc));
+    }
+    if doc.lang == Lang::Fdepl && !doc.root().has_error() {
+        out.extend(fdepl_semantic(ws, uri, doc));
     }
     out
 }
@@ -76,6 +81,53 @@ fn fidl_semantic(ws: &Workspace, uri: &Url, doc: &Document) -> Vec<Diagnostic> {
                 format!("Duplicate definition of `{}`", d.name),
             ));
         }
+    }
+    out
+}
+
+fn fdepl_semantic(ws: &Workspace, uri: &Url, doc: &Document) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
+    let Some(idx) = ws.fdepl.get(uri) else { return out };
+
+    for import in &idx.imports {
+        if import.is_uri && !import.is_external() && ws.resolve_import(uri, &import.target).is_none() {
+            out.push(diag(
+                doc,
+                import.target_span.clone(),
+                DiagnosticSeverity::WARNING,
+                format!("Cannot find imported file `{}`", import.target),
+            ));
+        }
+    }
+    // Specifications behind platform: or classpath: imports are invisible to us.
+    let has_external = idx.imports.iter().any(|i| i.is_external());
+
+    for (i, r) in idx.refs.iter().enumerate() {
+        if ws.resolve_fdepl(uri, i).is_some() {
+            continue;
+        }
+        let name = r.full_name();
+        let message = match r.kind {
+            FdeplRefKind::Spec if !has_external => format!("Cannot resolve specification `{name}`"),
+            FdeplRefKind::Target if r.parent.is_none() => format!("Cannot resolve `{name}`"),
+            FdeplRefKind::Target => {
+                let parent = r.parent.and_then(|p| ws.resolve_fdepl(uri, p));
+                if !matches!(parent, Some(FdeplTarget::Fidl(_))) {
+                    continue;
+                }
+                format!("`{name}` is not a member of the deployed element")
+            }
+            FdeplRefKind::InterfaceValue => format!("Cannot resolve interface `{name}`"),
+            FdeplRefKind::Property => {
+                let spec = r.spec.and_then(|s| ws.resolve_fdepl(uri, s));
+                if !matches!(spec, Some(FdeplTarget::Spec(..))) {
+                    continue;
+                }
+                format!("Property `{name}` is not declared in the specification")
+            }
+            _ => continue,
+        };
+        out.push(diag(doc, r.span(), DiagnosticSeverity::WARNING, message));
     }
     out
 }
@@ -216,5 +268,50 @@ mod tests {
     fn resolved_types_are_quiet() {
         let src = "package a\ntypeCollection T { struct S { Int8 f } }\ninterface I { attribute T.S s attribute Integer(0, 5) n }\n";
         assert!(semantic(src).is_empty());
+    }
+
+    fn ws_with(files: &[(&str, &str, &str)]) -> Workspace {
+        let mut ws = Workspace::default();
+        for (n, l, t) in files {
+            ws.open(Url::parse(&format!("file:///ws/{n}")).unwrap(), l, t.to_string(), 1);
+        }
+        ws
+    }
+
+    const FIDL: &str = "package p\ninterface I {\n method m { }\n}\n";
+    const SPEC: &str = "package s\nspecification s.Spec { for interface { Port: Integer; } for methods { T: Integer; } }\n";
+
+    fn fdepl_messages(deploy: &str) -> Vec<String> {
+        let ws = ws_with(&[("a.fidl", "franca", FIDL), ("s.fdepl", "fdepl", SPEC), ("d.fdepl", "fdepl", deploy)]);
+        diagnostics(&ws, &Url::parse("file:///ws/d.fdepl").unwrap()).into_iter().map(|d| d.message).collect()
+    }
+
+    #[test]
+    fn valid_deployment_has_no_diagnostics() {
+        let msgs = fdepl_messages("package d\ndefine s.Spec for interface p.I {\n Port = 1\n method m { T = 2 }\n}\n");
+        assert!(msgs.is_empty(), "{msgs:?}");
+    }
+
+    #[test]
+    fn reports_unresolved_fdepl_names() {
+        let msgs = fdepl_messages(
+            "package d\nimport \"gone.fdepl\"\ndefine s.Nope for interface p.Missing {\n Port = 1\n}\ndefine s.Spec for interface p.I {\n Bad = 1\n method zz { }\n}\n",
+        );
+        assert_eq!(
+            msgs,
+            [
+                "Cannot find imported file `gone.fdepl`",
+                "Cannot resolve specification `s.Nope`",
+                "Cannot resolve `p.Missing`",
+                "Property `Bad` is not declared in the specification",
+                "`zz` is not a member of the deployed element",
+            ]
+        );
+    }
+
+    #[test]
+    fn external_imports_silence_specification_warnings() {
+        let msgs = fdepl_messages("package d\nimport \"platform:/plugin/x/spec.fdepl\"\ndefine other.Spec for interface p.I {\n Whatever = 1\n}\n");
+        assert!(msgs.is_empty(), "{msgs:?}");
     }
 }
