@@ -1,6 +1,9 @@
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position};
 
+use crate::fdepl::FdeplKind;
+use crate::fdepl_resolve::FdeplTarget;
 use crate::fidl::{Decl, DeclKind};
+use crate::language::Lang;
 use crate::navigation::target_at;
 use crate::workspace::Workspace;
 
@@ -45,8 +48,52 @@ fn describe(decl: &Decl, owner: Option<&Decl>) -> String {
     out
 }
 
+fn describe_fdepl(ws: &Workspace, uri: &tower_lsp::lsp_types::Url, idx: usize) -> Option<String> {
+    let d = ws.fdepl_decl(uri, idx)?;
+    let index = ws.fdepl.get(uri)?;
+    let mut out = format!("```franca\n{}\n```", d.detail);
+    let owner = d.parent.map(|p| &index.decls[p]);
+    let note = match (d.kind, owner) {
+        (FdeplKind::Property, Some(host)) => {
+            let spec = host.parent.map(|p| index.decls[p].name.as_str()).unwrap_or_default();
+            format!("property of `for {}` in `{spec}`", host.name)
+        }
+        (FdeplKind::Specification, _) => format!("specification `{}`", d.name),
+        _ => d.kind.label().to_string(),
+    };
+    out.push_str(&format!("\n\n*{note}*"));
+    Some(out)
+}
+
+fn fdepl_hover(ws: &Workspace, uri: &tower_lsp::lsp_types::Url, pos: Position) -> Option<Hover> {
+    let doc = ws.get(uri)?;
+    let idx = ws.fdepl.get(uri)?;
+    let offset = doc.lines.offset(&doc.text, pos);
+    let (text, span) = if let Some(r) = idx.ref_at(offset) {
+        let span = idx.refs[r].span();
+        match ws.resolve_fdepl(uri, r)? {
+            FdeplTarget::Fidl(id) => {
+                let decl = ws.decl(&id)?;
+                let index = ws.fidl.get(&id.uri)?;
+                (describe(decl, decl.parent.map(|p| &index.decls[p])), span)
+            }
+            FdeplTarget::Spec(u, i) | FdeplTarget::Property(u, i) => (describe_fdepl(ws, &u, i)?, span),
+        }
+    } else {
+        let i = idx.decl_at(offset).filter(|&i| idx.decls[i].kind != FdeplKind::Host)?;
+        (describe_fdepl(ws, uri, i)?, idx.decls[i].name_span.clone())
+    };
+    Some(Hover {
+        contents: markdown(text),
+        range: Some(doc.lines.range(&doc.text, span.start, span.end)),
+    })
+}
+
 pub fn hover(ws: &Workspace, uri: &tower_lsp::lsp_types::Url, pos: Position) -> Option<Hover> {
     let doc = ws.get(uri)?;
+    if doc.lang == Lang::Fdepl {
+        return fdepl_hover(ws, uri, pos);
+    }
     if let Some(target) = target_at(ws, uri, pos) {
         let decl = ws.decl(&target.decl)?;
         let index = ws.fidl.get(&target.decl.uri)?;
@@ -121,5 +168,23 @@ mod tests {
     fn nothing_on_keywords() {
         let (ws, uri) = setup();
         assert!(hover(&ws, &uri, Position::new(0, 2)).is_none());
+    }
+
+    #[test]
+    fn describes_fdepl_properties_and_targets() {
+        let (mut ws, _) = setup();
+        let spec = "package s\nspecification s.Spec {\n for interface { Port: Integer (optional); }\n}\n";
+        let dep = "package d\ndefine s.Spec for interface org.demo.I {\n Port = 1\n}\n";
+        let su = Url::parse("file:///ws/s.fdepl").unwrap();
+        let du = Url::parse("file:///ws/d.fdepl").unwrap();
+        ws.open(su.clone(), "fdepl", spec.into(), 1);
+        ws.open(du.clone(), "fdepl", dep.into(), 1);
+        let h = hover(&ws, &du, Position::new(2, 2)).unwrap();
+        assert!(text(&h).contains("Port: Integer (optional)"), "{}", text(&h));
+        assert!(text(&h).contains("for interface"));
+        let h = hover(&ws, &du, Position::new(1, 36)).unwrap();
+        assert!(text(&h).contains("interface `org.demo.I`"), "{}", text(&h));
+        let h = hover(&ws, &su, Position::new(2, 20)).unwrap();
+        assert!(text(&h).contains("Port: Integer"));
     }
 }
