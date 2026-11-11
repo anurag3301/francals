@@ -36,6 +36,20 @@ impl Workspace {
         None
     }
 
+    /// An anonymous `typeCollection`, which deployments name by its package.
+    fn find_anonymous_collection(&self, name: &str) -> Option<DeclId> {
+        let mut uris: Vec<&Url> = self.fidl.keys().collect();
+        uris.sort();
+        uris.into_iter().find_map(|u| {
+            let idx = &self.fidl[u];
+            if idx.package.as_deref() != Some(name) {
+                return None;
+            }
+            let i = idx.decls.iter().position(|d| d.kind == DeclKind::TypeCollection && d.name.is_empty())?;
+            Some(DeclId { uri: u.clone(), idx: i })
+        })
+    }
+
     /// Finds a specification by its (possibly package-relative) name.
     pub fn find_spec(&self, uri: &Url, name: &str) -> Option<(Url, usize)> {
         let local_pkg = self.fdepl.get(uri).and_then(|i| i.package.clone());
@@ -74,9 +88,12 @@ impl Workspace {
             }
             FdeplRefKind::Target => match r.parent {
                 None => {
-                    let d = self.find_fidl(uri, idx.package.as_deref(), &r.full_name(), |k| {
-                        matches!(k, DeclKind::Interface | DeclKind::TypeCollection)
-                    })?;
+                    let name = r.full_name();
+                    let d = self
+                        .find_fidl(uri, idx.package.as_deref(), &name, |k| {
+                            matches!(k, DeclKind::Interface | DeclKind::TypeCollection)
+                        })
+                        .or_else(|| self.find_anonymous_collection(&name))?;
                     Some(FdeplTarget::Fidl(d))
                 }
                 Some(p) if depth < 8 => {
@@ -195,6 +212,23 @@ mod tests {
         assert_eq!(r("to").as_deref(), Some("org.example.demo.Demo.move.to"));
         assert_eq!(r("origin").as_deref(), Some("org.example.demo.Demo.origin"));
         assert_eq!(r("x").as_deref(), Some("org.example.demo.Demo.Pt.x"));
+    }
+
+    #[test]
+    fn anonymous_type_collections_are_named_by_package() {
+        let mut ws = Workspace::default();
+        ws.open(Url::parse("file:///ws/t.fidl").unwrap(), "franca", "package a.b\ntypeCollection {\n struct S { Int8 f }\n}\n".into(), 1);
+        let u = Url::parse("file:///ws/t.fdepl").unwrap();
+        ws.open(u.clone(), "fdepl", "package d\ndefine x.Spec for typeCollection a.b {\n struct S { f { } }\n}\n".into(), 1);
+        let idx = &ws.fdepl[&u];
+        let fqns: Vec<String> = (0..idx.refs.len())
+            .filter(|&i| idx.refs[i].kind == FdeplRefKind::Target)
+            .filter_map(|i| match ws.resolve_fdepl(&u, i)? {
+                FdeplTarget::Fidl(d) => Some(ws.fidl[&d.uri].decls[d.idx].fqn.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fqns, ["a.b", "a.b.S", "a.b.S.f"]);
     }
 
     #[test]
