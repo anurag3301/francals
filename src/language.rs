@@ -44,9 +44,7 @@ impl Lang {
 
 pub fn parse(lang: Lang, source: &str, old: Option<&Tree>) -> Tree {
     let mut parser = Parser::new();
-    parser
-        .set_language(&lang.language())
-        .expect("grammar ABI matches tree-sitter runtime");
+    parser.set_language(&lang.language()).expect("grammar ABI matches tree-sitter runtime");
     parser.parse(source, old).expect("parser has no timeout")
 }
 

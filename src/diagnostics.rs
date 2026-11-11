@@ -260,7 +260,8 @@ mod tests {
 
     #[test]
     fn same_argument_names_in_different_methods_are_fine() {
-        let src = "package a\ninterface I {\n method m { in { Int8 v } out { Int8 v } }\n method n { in { Int8 v } }\n}\n";
+        let src =
+            "package a\ninterface I {\n method m { in { Int8 v } out { Int8 v } }\n method n { in { Int8 v } }\n}\n";
         assert!(semantic(src).is_empty());
     }
 
@@ -279,7 +280,8 @@ mod tests {
     }
 
     const FIDL: &str = "package p\ninterface I {\n method m { }\n}\n";
-    const SPEC: &str = "package s\nspecification s.Spec { for interface { Port: Integer; } for methods { T: Integer; } }\n";
+    const SPEC: &str =
+        "package s\nspecification s.Spec { for interface { Port: Integer; } for methods { T: Integer; } }\n";
 
     fn fdepl_messages(deploy: &str) -> Vec<String> {
         let ws = ws_with(&[("a.fidl", "franca", FIDL), ("s.fdepl", "fdepl", SPEC), ("d.fdepl", "fdepl", deploy)]);
@@ -311,7 +313,9 @@ mod tests {
 
     #[test]
     fn external_imports_silence_specification_warnings() {
-        let msgs = fdepl_messages("package d\nimport \"platform:/plugin/x/spec.fdepl\"\ndefine other.Spec for interface p.I {\n Whatever = 1\n}\n");
+        let msgs = fdepl_messages(
+            "package d\nimport \"platform:/plugin/x/spec.fdepl\"\ndefine other.Spec for interface p.I {\n Whatever = 1\n}\n",
+        );
         assert!(msgs.is_empty(), "{msgs:?}");
     }
 }

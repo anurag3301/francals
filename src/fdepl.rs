@@ -167,18 +167,24 @@ impl<'a> Builder<'a> {
                 let n = name.map(|n| self.text(n).to_string()).unwrap_or_default();
                 self.push_decl(node, name, n, FdeplKind::Property, String::new(), ctx.parent_decl, Some(text));
             }
-            "type_collection_deployment" | "interface_deployment" | "extension_root" => {
-                self.root_deployment(node, ctx)
-            }
-            "attribute_deployment" | "method_deployment" | "broadcast_deployment" | "array_deployment"
-            | "struct_deployment" | "union_deployment" | "typedef_deployment" | "enumeration_deployment"
-            | "map_deployment" | "field_deployment" | "argument_deployment" | "enumerator_deployment" => {
-                self.member(node, ctx)
-            }
+            "type_collection_deployment" | "interface_deployment" | "extension_root" => self.root_deployment(node, ctx),
+            "attribute_deployment"
+            | "method_deployment"
+            | "broadcast_deployment"
+            | "array_deployment"
+            | "struct_deployment"
+            | "union_deployment"
+            | "typedef_deployment"
+            | "enumeration_deployment"
+            | "map_deployment"
+            | "field_deployment"
+            | "argument_deployment"
+            | "enumerator_deployment" => self.member(node, ctx),
             "extension_element" => {
                 let tag = node.child_by_field_name("tag");
                 let name = tag.map(|t| self.text(t).to_string()).unwrap_or_default();
-                let id = self.push_decl(node, tag, name.clone(), FdeplKind::Member, name.clone(), ctx.parent_decl, None);
+                let id =
+                    self.push_decl(node, tag, name.clone(), FdeplKind::Member, name.clone(), ctx.parent_decl, None);
                 let ctx2 = Ctx { parent_decl: Some(id), host: name, ..ctx.clone() };
                 self.visit_children(node, &ctx2);
             }
@@ -250,7 +256,14 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn add_ref(&mut self, node: Node, kind: FdeplRefKind, parent: Option<usize>, ctx: &Ctx, top: bool) -> Option<usize> {
+    fn add_ref(
+        &mut self,
+        node: Node,
+        kind: FdeplRefKind,
+        parent: Option<usize>,
+        ctx: &Ctx,
+        top: bool,
+    ) -> Option<usize> {
         let mut cursor = node.walk();
         let segments: Vec<Segment> = node
             .children(&mut cursor)
@@ -314,9 +327,7 @@ impl<'a> Builder<'a> {
     }
 
     fn root_deployment(&mut self, node: Node, ctx: &Ctx) {
-        let spec = node
-            .child_by_field_name("spec")
-            .and_then(|s| self.add_ref(s, FdeplRefKind::Spec, None, ctx, true));
+        let spec = node.child_by_field_name("spec").and_then(|s| self.add_ref(s, FdeplRefKind::Spec, None, ctx, true));
         let (keyword, target_node) = match node.kind() {
             "type_collection_deployment" => ("typeCollection".to_string(), node.child_by_field_name("target")),
             "interface_deployment" => ("interface".to_string(), node.child_by_field_name("target")),
@@ -336,13 +347,7 @@ impl<'a> Builder<'a> {
             None => keyword.clone(),
         };
         let id = self.push_decl(node, name_node, name, FdeplKind::Deployment, keyword.clone(), ctx.parent_decl, None);
-        let ctx2 = Ctx {
-            parent_decl: Some(id),
-            parent_target: target_ref,
-            spec,
-            host: keyword,
-            overwrite: false,
-        };
+        let ctx2 = Ctx { parent_decl: Some(id), parent_target: target_ref, spec, host: keyword, overwrite: false };
         self.visit_children(node, &ctx2);
     }
 
@@ -350,11 +355,11 @@ impl<'a> Builder<'a> {
         let keyword = node.kind().trim_end_matches("_deployment").to_string();
         let mut target = node.child_by_field_name("target");
         // Operations wrap their name: `operation_name: qualified_name (':' selector)?`.
-        if let Some(t) = target {
-            if t.kind() == "operation_name" {
-                let mut cursor = t.walk();
-                target = t.children(&mut cursor).find(|c| c.kind() == "qualified_name");
-            }
+        if let Some(t) = target
+            && t.kind() == "operation_name"
+        {
+            let mut cursor = t.walk();
+            target = t.children(&mut cursor).find(|c| c.kind() == "qualified_name");
         }
         let mut target_ref = ctx.parent_target;
         let mut name = String::new();
@@ -413,7 +418,6 @@ mod tests {
     use super::*;
     use crate::language::Lang;
 
-
     fn index() -> FdeplIndex {
         FdeplIndex::build(&Document::new(Lang::Fdepl, SAMPLE.into(), 0))
     }
@@ -428,7 +432,8 @@ mod tests {
         let spec = idx.decls.iter().find(|d| d.kind == FdeplKind::Specification).unwrap();
         assert_eq!(spec.name, "org.example.Spec");
         assert!(spec.base.is_some());
-        let props: Vec<_> = idx.decls.iter().filter(|d| d.kind == FdeplKind::Property).map(|d| d.name.as_str()).collect();
+        let props: Vec<_> =
+            idx.decls.iter().filter(|d| d.kind == FdeplKind::Property).map(|d| d.name.as_str()).collect();
         assert_eq!(props, ["Port", "Mode", "Timeout"]);
         let mode = idx.decls.iter().find(|d| d.name == "Mode").unwrap();
         assert_eq!(mode.detail, "Mode: { fast, slow } (default: fast)");

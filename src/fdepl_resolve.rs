@@ -174,7 +174,10 @@ impl Workspace {
 pub fn host_matches(host: &str, keyword: &str) -> bool {
     let h = host.to_lowercase().replace('_', "");
     let k = keyword.to_lowercase();
-    h == k || h == format!("{k}s") || h == format!("{k}es") || (k.ends_with('y') && h == format!("{}ies", &k[..k.len() - 1]))
+    h == k
+        || h == format!("{k}s")
+        || h == format!("{k}es")
+        || (k.ends_with('y') && h == format!("{}ies", &k[..k.len() - 1]))
 }
 
 #[cfg(test)]
@@ -224,9 +227,19 @@ mod tests {
     #[test]
     fn anonymous_type_collections_are_named_by_package() {
         let mut ws = Workspace::default();
-        ws.open(Url::parse("file:///ws/t.fidl").unwrap(), "franca", "package a.b\ntypeCollection {\n struct S { Int8 f }\n}\n".into(), 1);
+        ws.open(
+            Url::parse("file:///ws/t.fidl").unwrap(),
+            "franca",
+            "package a.b\ntypeCollection {\n struct S { Int8 f }\n}\n".into(),
+            1,
+        );
         let u = Url::parse("file:///ws/t.fdepl").unwrap();
-        ws.open(u.clone(), "fdepl", "package d\ndefine x.Spec for typeCollection a.b {\n struct S { f { } }\n}\n".into(), 1);
+        ws.open(
+            u.clone(),
+            "fdepl",
+            "package d\ndefine x.Spec for typeCollection a.b {\n struct S { f { } }\n}\n".into(),
+            1,
+        );
         let idx = &ws.fdepl[&u];
         let fqns: Vec<String> = (0..idx.refs.len())
             .filter(|&i| idx.refs[i].kind == FdeplRefKind::Target)
@@ -256,7 +269,8 @@ mod tests {
     #[test]
     fn property_lookup_prefers_matching_host() {
         let ws = ws();
-        let Some(FdeplTarget::Property(u, i)) = resolve(&ws, FdeplRefKind::Property, "Timeout", Some("attribute")) else {
+        let Some(FdeplTarget::Property(u, i)) = resolve(&ws, FdeplRefKind::Property, "Timeout", Some("attribute"))
+        else {
             panic!("property not found")
         };
         let idx = &ws.fdepl[&u];
@@ -267,7 +281,12 @@ mod tests {
     fn unknown_names_do_not_resolve() {
         let mut ws = ws();
         let u = Url::parse("file:///ws/e.fdepl").unwrap();
-        ws.open(u.clone(), "fdepl", "package e\ndefine nope.Spec for interface no.Such {\n method m { P = 1 }\n}\n".into(), 1);
+        ws.open(
+            u.clone(),
+            "fdepl",
+            "package e\ndefine nope.Spec for interface no.Such {\n method m { P = 1 }\n}\n".into(),
+            1,
+        );
         let idx = &ws.fdepl[&u];
         for i in 0..idx.refs.len() {
             assert!(ws.resolve_fdepl(&u, i).is_none());

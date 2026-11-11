@@ -14,8 +14,21 @@ use crate::workspace::{DeclId, Workspace};
 const TOP_KEYWORDS: &[&str] = &["package", "import", "typeCollection", "interface"];
 const TYPE_DEF_KEYWORDS: &[&str] = &["array", "typedef", "struct", "union", "enumeration", "map"];
 const BASIC_TYPES: &[&str] = &[
-    "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Boolean", "String",
-    "Float", "Double", "ByteBuffer", "Integer", "undefined",
+    "Int8",
+    "UInt8",
+    "Int16",
+    "UInt16",
+    "Int32",
+    "UInt32",
+    "Int64",
+    "UInt64",
+    "Boolean",
+    "String",
+    "Float",
+    "Double",
+    "ByteBuffer",
+    "Integer",
+    "undefined",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,9 +87,9 @@ pub(crate) fn lex(text: &str, end: usize) -> Option<Vec<Token>> {
         if c.is_ascii_whitespace() {
             i += 1;
         } else if src[i..].starts_with("//") {
-            match src[i..].find('\n') {
-                Some(n) => i += n + 1,
-                None => return None,
+            {
+                let n = src[i..].find('\n')?;
+                i += n + 1
             }
         } else if src[i..].starts_with("/*") {
             i += src[i + 2..].find("*/")? + 4;
@@ -139,7 +152,7 @@ fn block_for(words: &[String]) -> Block {
             "state" => Block::State,
             _ => continue,
         };
-        return Some(b).unwrap();
+        return b;
     }
     Block::Other
 }
@@ -227,11 +240,7 @@ pub(crate) fn partial_len(text: &str, offset: usize) -> usize {
 pub(crate) fn keyword_items(words: &[&str]) -> Vec<CompletionItem> {
     words
         .iter()
-        .map(|w| CompletionItem {
-            label: w.to_string(),
-            kind: Some(CompletionItemKind::KEYWORD),
-            ..Default::default()
-        })
+        .map(|w| CompletionItem { label: w.to_string(), kind: Some(CompletionItemKind::KEYWORD), ..Default::default() })
         .collect()
 }
 
@@ -278,7 +287,7 @@ fn type_context(ctx: &Context) -> Option<Want> {
         _ => {}
     }
     match ctx.block {
-        Block::Struct | Block::In | Block::Out | Block::Vars | Block::Map if ctx.units.len() % 2 == 0 => {
+        Block::Struct | Block::In | Block::Out | Block::Vars | Block::Map if ctx.units.len().is_multiple_of(2) => {
             Some(Want::Types)
         }
         _ => None,
@@ -315,8 +324,19 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
             keyword_items(&kw)
         }
         (Block::Interface, None) => keyword_items(&[
-            "version", "attribute", "method", "broadcast", "contract", "const", "public", "array", "typedef",
-            "struct", "union", "enumeration", "map",
+            "version",
+            "attribute",
+            "method",
+            "broadcast",
+            "contract",
+            "const",
+            "public",
+            "array",
+            "typedef",
+            "struct",
+            "union",
+            "enumeration",
+            "map",
         ]),
         (Block::TypeCollection, None) => {
             keyword_items(&["version", "const", "public", "array", "typedef", "struct", "union", "enumeration", "map"])
@@ -328,9 +348,7 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
         (Block::Psm, None) => keyword_items(&["initial", "state"]),
         (Block::State, None) => keyword_items(&["on"]),
         (Block::State, Some("on")) => keyword_items(&["call", "respond", "error", "signal", "set", "update"]),
-        (Block::Psm, Some("initial")) | (Block::State, Some("->")) => {
-            members(ws, uri, idx, scope, &[DeclKind::State])
-        }
+        (Block::Psm, Some("initial")) | (Block::State, Some("->")) => members(ws, uri, idx, scope, &[DeclKind::State]),
         (Block::State, Some("call" | "respond" | "error" | "signal")) => {
             members(ws, uri, idx, scope, &[DeclKind::Method, DeclKind::Broadcast])
         }
@@ -340,15 +358,22 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
 }
 
 /// Members of the interface around the cursor, including inherited ones.
-fn members(ws: &Workspace, uri: &Url, idx: &FidlIndex, scope: Option<usize>, kinds: &[DeclKind]) -> Vec<CompletionItem> {
+fn members(
+    ws: &Workspace,
+    uri: &Url,
+    idx: &FidlIndex,
+    scope: Option<usize>,
+    kinds: &[DeclKind],
+) -> Vec<CompletionItem> {
     let Some(scope) = scope else { return Vec::new() };
     let mut items = Vec::new();
     for ns in ws.scope_chain(uri, idx, scope) {
         for (name, id) in children_of(ws, &ns) {
-            if let Some(d) = ws.decl(&id) {
-                if kinds.contains(&d.kind) && d.name == name {
-                    items.push(decl_item(&name, d.kind, Some(d.detail.clone()), &name));
-                }
+            if let Some(d) = ws.decl(&id)
+                && kinds.contains(&d.kind)
+                && d.name == name
+            {
+                items.push(decl_item(&name, d.kind, Some(d.detail.clone()), &name));
             }
         }
     }
@@ -389,8 +414,7 @@ fn qualified(
     qualifier: &str,
     want: Want,
 ) -> Vec<CompletionItem> {
-    let segments: Vec<Segment> =
-        qualifier.split('.').map(|s| Segment { text: s.to_string(), span: 0..0 }).collect();
+    let segments: Vec<Segment> = qualifier.split('.').map(|s| Segment { text: s.to_string(), span: 0..0 }).collect();
     let r = Ref { segments, kind: RefKind::Value, scope };
     let mut namespaces: BTreeSet<String> = ws.candidates(uri, idx, &r, qualifier).into_iter().collect();
     // Sub-packages such as `org.` -> `example`.
@@ -407,7 +431,10 @@ fn qualified(
         for fqn in ws.by_fqn.keys() {
             if let Some(rest) = fqn.strip_prefix(&prefix) {
                 let head = rest.split('.').next().unwrap_or(rest);
-                if rest.contains('.') && !ws.by_fqn.contains_key(&format!("{prefix}{head}")) && seen.insert(head.to_string()) {
+                if rest.contains('.')
+                    && !ws.by_fqn.contains_key(&format!("{prefix}{head}"))
+                    && seen.insert(head.to_string())
+                {
                     items.push(CompletionItem {
                         label: head.to_string(),
                         kind: Some(CompletionItemKind::MODULE),
@@ -434,10 +461,10 @@ fn visible_decls(ws: &Workspace, uri: &Url, idx: &FidlIndex, scope: Option<usize
         }
         // Types nested deeper than one container are reached through it.
         let mut names = vec![d.name.clone()];
-        if let Some(p) = d.parent.map(|p| &index.decls[p]) {
-            if !p.name.is_empty() {
-                names.push(format!("{}.{}", p.name, d.name));
-            }
+        if let Some(p) = d.parent.map(|p| &index.decls[p])
+            && !p.name.is_empty()
+        {
+            names.push(format!("{}.{}", p.name, d.name));
         }
         names.push(d.fqn.clone());
         let best = names.into_iter().find(|n| {
@@ -460,7 +487,8 @@ fn visible_decls(ws: &Workspace, uri: &Url, idx: &FidlIndex, scope: Option<usize
 mod tests {
     use super::*;
 
-    const COMMON: &str = "package org.common\ntypeCollection Types {\n struct Point { Int8 x }\n enumeration Mode { A }\n}\n";
+    const COMMON: &str =
+        "package org.common\ntypeCollection Types {\n struct Point { Int8 x }\n enumeration Mode { A }\n}\n";
 
     /// Completes at the `|` marker in `src`.
     fn complete_at(src: &str) -> Vec<String> {
@@ -520,9 +548,8 @@ mod tests {
 
     #[test]
     fn qualified_members() {
-        let l = complete_at(
-            "package a\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.|\n}\n",
-        );
+        let l =
+            complete_at("package a\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.|\n}\n");
         assert_eq!(l, ["Mode", "Point"]);
         let l = complete_at("package a\ninterface I {\n attribute org.|\n}\n");
         assert_eq!(l, ["common"]);

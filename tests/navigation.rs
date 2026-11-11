@@ -4,7 +4,8 @@ use common::Client;
 use serde_json::json;
 
 fn project() -> (std::path::PathBuf, String) {
-    let dir = std::env::temp_dir().join(format!("francals-nav-{}-{:?}", std::process::id(), std::thread::current().id()));
+    let dir =
+        std::env::temp_dir().join(format!("francals-nav-{}-{:?}", std::process::id(), std::thread::current().id()));
     let dir = dir.to_string_lossy().replace("ThreadId(", "").replace(')', "");
     let dir = std::path::PathBuf::from(dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -17,7 +18,8 @@ fn project() -> (std::path::PathBuf, String) {
     (dir, root)
 }
 
-const MAIN: &str = "package org.app\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.Point a\n}\n";
+const MAIN: &str =
+    "package org.app\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.Point a\n}\n";
 
 #[test]
 fn definition_and_references_across_files() {

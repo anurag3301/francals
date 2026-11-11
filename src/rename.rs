@@ -59,11 +59,17 @@ mod tests {
 
     fn setup() -> Workspace {
         let mut ws = Workspace::default();
-        ws.open(uri("c.fidl"), "franca", "package c\ntypeCollection T {\n struct Point { Int8 x }\n enumeration E { A }\n}\n".into(), 1);
+        ws.open(
+            uri("c.fidl"),
+            "franca",
+            "package c\ntypeCollection T {\n struct Point { Int8 x }\n enumeration E { A }\n}\n".into(),
+            1,
+        );
         ws.open(
             uri("m.fidl"),
             "franca",
-            "package m\nimport c.* from \"c.fidl\"\ninterface I {\n attribute T.Point a\n attribute T.Point b\n}\n".into(),
+            "package m\nimport c.* from \"c.fidl\"\ninterface I {\n attribute T.Point a\n attribute T.Point b\n}\n"
+                .into(),
             1,
         );
         ws

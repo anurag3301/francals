@@ -39,10 +39,7 @@ impl Document {
                     };
                     self.text.replace_range(start..end, &change.text);
                     let new_lines = LineIndex::new(&self.text);
-                    let edit = InputEdit {
-                        new_end_position: new_lines.point(edit.new_end_byte),
-                        ..edit
-                    };
+                    let edit = InputEdit { new_end_position: new_lines.point(edit.new_end_byte), ..edit };
                     self.tree.edit(&edit);
                     self.lines = new_lines;
                     self.tree = language::parse(self.lang, &self.text, Some(&self.tree));

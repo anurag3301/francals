@@ -2,8 +2,8 @@
 
 use tower_lsp::lsp_types::{Location, Position, Url};
 
-use crate::fdepl_resolve::FdeplTarget;
 use crate::fdepl::FdeplRefKind;
+use crate::fdepl_resolve::FdeplTarget;
 use crate::fidl::Span;
 use crate::language::Lang;
 use crate::workspace::{DeclId, Workspace};
@@ -105,10 +105,8 @@ fn import_target(ws: &Workspace, uri: &Url, pos: Position) -> Option<Location> {
 /// Every identifier that refers to `target`, optionally with its declaration.
 pub fn references(ws: &Workspace, target: &DeclId, include_declaration: bool) -> Vec<Location> {
     let mut out = Vec::new();
-    if include_declaration {
-        if let Some(d) = ws.decl(target) {
-            out.extend(location(ws, &target.uri, d.name_span.clone()));
-        }
+    if include_declaration && let Some(d) = ws.decl(target) {
+        out.extend(location(ws, &target.uri, d.name_span.clone()));
     }
     let mut uris: Vec<&Url> = ws.fidl.keys().collect();
     uris.sort();
@@ -210,7 +208,8 @@ mod tests {
         ws.open(
             uri("d.fdepl"),
             "fdepl",
-            "package d\nimport \"spec.fdepl\"\ndefine s.Spec for interface org.app.I {\n Port = 1\n method m { }\n}\n".into(),
+            "package d\nimport \"spec.fdepl\"\ndefine s.Spec for interface org.app.I {\n Port = 1\n method m { }\n}\n"
+                .into(),
             1,
         );
         ws

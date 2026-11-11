@@ -9,12 +9,25 @@ use crate::fidl::DeclKind;
 use crate::workspace::{DeclId, Workspace};
 
 const HOSTS: &[&str] = &[
-    "interface", "typeCollections", "methods", "attributes", "broadcasts", "arguments", "arrays", "structs",
-    "unions", "enumerations", "enumerators", "typedefs", "maps", "fields", "provider", "instances",
+    "interface",
+    "typeCollections",
+    "methods",
+    "attributes",
+    "broadcasts",
+    "arguments",
+    "arrays",
+    "structs",
+    "unions",
+    "enumerations",
+    "enumerators",
+    "typedefs",
+    "maps",
+    "fields",
+    "provider",
+    "instances",
 ];
-const MEMBER_KEYWORDS: &[&str] = &[
-    "method", "attribute", "broadcast", "array", "struct", "union", "typedef", "enumeration", "map",
-];
+const MEMBER_KEYWORDS: &[&str] =
+    &["method", "attribute", "broadcast", "array", "struct", "union", "typedef", "enumeration", "map"];
 const TYPE_KEYWORDS: &[&str] = &["array", "struct", "union", "typedef", "enumeration", "map"];
 
 #[derive(Clone, Default)]
@@ -331,9 +344,7 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
         "map" => out.extend(keyword_items(&["key", "value"])),
         group @ ("in" | "out") => out.extend(target.map(|t| arguments(ws, t, group)).unwrap_or_default()),
         "struct" | "union" => out.extend(target.map(|t| children(ws, t, &[DeclKind::Field])).unwrap_or_default()),
-        "enumeration" => {
-            out.extend(target.map(|t| children(ws, t, &[DeclKind::Enumerator])).unwrap_or_default())
-        }
+        "enumeration" => out.extend(target.map(|t| children(ws, t, &[DeclKind::Enumerator])).unwrap_or_default()),
         _ => {}
     }
     out

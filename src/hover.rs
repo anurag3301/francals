@@ -83,10 +83,7 @@ fn fdepl_hover(ws: &Workspace, uri: &tower_lsp::lsp_types::Url, pos: Position) -
         let i = idx.decl_at(offset).filter(|&i| idx.decls[i].kind != FdeplKind::Host)?;
         (describe_fdepl(ws, uri, i)?, idx.decls[i].name_span.clone())
     };
-    Some(Hover {
-        contents: markdown(text),
-        range: Some(doc.lines.range(&doc.text, span.start, span.end)),
-    })
+    Some(Hover { contents: markdown(text), range: Some(doc.lines.range(&doc.text, span.start, span.end)) })
 }
 
 pub fn hover(ws: &Workspace, uri: &tower_lsp::lsp_types::Url, pos: Position) -> Option<Hover> {

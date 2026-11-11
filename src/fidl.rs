@@ -325,12 +325,7 @@ impl<'a> Builder<'a> {
         });
         let raw = self.text(uri);
         let uri_span = uri.start_byte() + 1..uri.end_byte().saturating_sub(1).max(uri.start_byte() + 1);
-        self.index.imports.push(Import {
-            namespace,
-            uri: unquote(raw),
-            uri_span,
-            span: node.byte_range(),
-        });
+        self.index.imports.push(Import { namespace, uri: unquote(raw), uri_span, span: node.byte_range() });
     }
 
     fn add_ref(&mut self, node: Node, kind: RefKind, scope: Option<usize>) {
@@ -373,17 +368,7 @@ impl<'a> Builder<'a> {
         };
         let detail = self.signature(node, kind);
         let doc = self.description(node);
-        self.index.decls.push(Decl {
-            name,
-            kind,
-            fqn,
-            parent,
-            name_span,
-            span: node.byte_range(),
-            detail,
-            doc,
-            base,
-        });
+        self.index.decls.push(Decl { name, kind, fqn, parent, name_span, span: node.byte_range(), detail, doc, base });
         self.index.decls.len() - 1
     }
 
@@ -565,8 +550,7 @@ interface Demo extends Base {
     #[test]
     fn records_references() {
         let idx = index(SAMPLE);
-        let names: Vec<(String, RefKind)> =
-            idx.refs.iter().map(|r| (r.name(r.segments.len()), r.kind)).collect();
+        let names: Vec<(String, RefKind)> = idx.refs.iter().map(|r| (r.name(r.segments.len()), r.kind)).collect();
         assert!(names.contains(&("Base".to_string(), RefKind::Base)));
         assert!(names.contains(&("Types.Point".to_string(), RefKind::Type)));
         assert!(names.contains(&("Types.Color".to_string(), RefKind::Type)));

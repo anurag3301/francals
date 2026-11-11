@@ -102,23 +102,23 @@ impl Workspace {
 
     /// Resolves the URI of an `import ... from "uri"` relative to the importing file.
     pub fn resolve_import(&self, from: &Url, target: &str) -> Option<Url> {
-        if let Ok(url) = Url::parse(target) {
-            if url.scheme() == "file" {
-                return Some(url);
-            }
+        if let Ok(url) = Url::parse(target)
+            && url.scheme() == "file"
+        {
+            return Some(url);
         }
         let mut bases: Vec<PathBuf> = Vec::new();
-        if let Ok(p) = from.to_file_path() {
-            if let Some(dir) = p.parent() {
-                bases.push(dir.to_path_buf());
-            }
+        if let Ok(p) = from.to_file_path()
+            && let Some(dir) = p.parent()
+        {
+            bases.push(dir.to_path_buf());
         }
         bases.extend(self.roots.iter().cloned());
         for base in &bases {
-            if let Some(uri) = loader::path_to_uri(&base.join(target)) {
-                if self.docs.contains_key(&uri) || uri.to_file_path().is_ok_and(|p| p.is_file()) {
-                    return Some(uri);
-                }
+            if let Some(uri) = loader::path_to_uri(&base.join(target))
+                && (self.docs.contains_key(&uri) || uri.to_file_path().is_ok_and(|p| p.is_file()))
+            {
+                return Some(uri);
             }
         }
         // Fall back to a known file whose path ends with the import path.
@@ -202,7 +202,8 @@ mod tests {
     fn follows_fdepl_imports() {
         let dir = temp_dir("fdepl-imports");
         std::fs::write(dir.join("a.fidl"), "package a\ninterface I { }\n").unwrap();
-        std::fs::write(dir.join("spec.fdepl"), "package s\nspecification s.S { for interface { P: Integer; } }\n").unwrap();
+        std::fs::write(dir.join("spec.fdepl"), "package s\nspecification s.S { for interface { P: Integer; } }\n")
+            .unwrap();
         let main = dir.join("main.fdepl");
         std::fs::write(&main, "package m\nimport \"spec.fdepl\"\nimport \"a.fidl\"\n").unwrap();
         let mut ws = Workspace::default();
@@ -245,7 +246,11 @@ mod tests {
     fn follows_imports_from_disk() {
         let dir = temp_dir("imports");
         std::fs::create_dir_all(dir.join("lib")).unwrap();
-        std::fs::write(dir.join("lib/types.fidl"), "package lib\nimport x.* from \"../more.fidl\"\ntypeCollection T { struct S { Int8 f } }\n").unwrap();
+        std::fs::write(
+            dir.join("lib/types.fidl"),
+            "package lib\nimport x.* from \"../more.fidl\"\ntypeCollection T { struct S { Int8 f } }\n",
+        )
+        .unwrap();
         std::fs::write(dir.join("more.fidl"), "package x\ntypeCollection M { }\n").unwrap();
         let main = dir.join("main.fidl");
         std::fs::write(&main, "package app\nimport lib.* from \"lib/types.fidl\"\n").unwrap();

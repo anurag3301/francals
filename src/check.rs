@@ -76,7 +76,7 @@ mod tests {
         std::fs::write(dir.join("ok.fidl"), "package a\ninterface I { }\n").unwrap();
         std::fs::write(dir.join("bad.fidl"), "package b\ninterface J { attribute Nope x }\ninterface K {\n").unwrap();
         std::fs::write(dir.join("warn.fidl"), "package c\ninterface L { attribute Nope x }\n").unwrap();
-        let s = run(&[dir.clone()], true);
+        let s = run(std::slice::from_ref(&dir), true);
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(s.files, 3);
         assert_eq!(s.errors, 1);

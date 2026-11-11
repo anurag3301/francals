@@ -63,13 +63,11 @@ impl LanguageServer for Backend {
         self.ws.write().unwrap().roots = roots;
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Options(
-                    TextDocumentSyncOptions {
-                        open_close: Some(true),
-                        change: Some(TextDocumentSyncKind::INCREMENTAL),
-                        ..Default::default()
-                    },
-                )),
+                text_document_sync: Some(TextDocumentSyncCapability::Options(TextDocumentSyncOptions {
+                    open_close: Some(true),
+                    change: Some(TextDocumentSyncKind::INCREMENTAL),
+                    ..Default::default()
+                })),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
                     trigger_characters: Some(vec![".".into(), ">".into()]),
@@ -86,10 +84,7 @@ impl LanguageServer for Backend {
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
-            server_info: Some(ServerInfo {
-                name: "francals".into(),
-                version: Some(env!("CARGO_PKG_VERSION").into()),
-            }),
+            server_info: Some(ServerInfo { name: "francals".into(), version: Some(env!("CARGO_PKG_VERSION").into()) }),
         })
     }
 

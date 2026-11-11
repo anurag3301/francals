@@ -28,9 +28,7 @@ impl Workspace {
     /// First declaration named `fqn` that satisfies `kind`; prefers `uri`'s own file.
     pub fn lookup(&self, fqn: &str, kind: RefKind, uri: &Url) -> Option<DeclId> {
         let list = self.by_fqn.get(fqn)?;
-        let ok = |d: &&DeclId| {
-            self.fidl.get(&d.uri).is_some_and(|i| accepts(kind, i.decls[d.idx].kind))
-        };
+        let ok = |d: &&DeclId| self.fidl.get(&d.uri).is_some_and(|i| accepts(kind, i.decls[d.idx].kind));
         list.iter().filter(ok).find(|d| &d.uri == uri).or_else(|| list.iter().find(ok)).cloned()
     }
 
@@ -79,10 +77,10 @@ impl Workspace {
             let Some(ns) = &import.namespace else { continue };
             if let Some(prefix) = import.wildcard() {
                 out.push(format!("{prefix}.{name}"));
-            } else if let Some((prefix, last)) = ns.rsplit_once('.') {
-                if name == last || name.starts_with(&format!("{last}.")) {
-                    out.push(format!("{prefix}.{name}"));
-                }
+            } else if let Some((prefix, last)) = ns.rsplit_once('.')
+                && (name == last || name.starts_with(&format!("{last}.")))
+            {
+                out.push(format!("{prefix}.{name}"));
             }
         }
         out.push(name.to_string());
@@ -130,13 +128,17 @@ mod tests {
         Some(ws.decl(&r.target)?.fqn.clone())
     }
 
-    const COMMON: &str = "package org.common\ntypeCollection Types {\n struct Point { Int8 x }\n enumeration Mode { A B }\n}\n";
+    const COMMON: &str =
+        "package org.common\ntypeCollection Types {\n struct Point { Int8 x }\n enumeration Mode { A B }\n}\n";
 
     #[test]
     fn resolves_through_wildcard_import() {
         let ws = ws_with(&[
             ("common.fidl", COMMON),
-            ("main.fidl", "package org.app\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.Point p\n}\n"),
+            (
+                "main.fidl",
+                "package org.app\nimport org.common.* from \"common.fidl\"\ninterface I {\n attribute Types.Point p\n}\n",
+            ),
         ]);
         assert_eq!(target_fqn(&ws, "main.fidl", "Types.Point").as_deref(), Some("org.common.Types.Point"));
     }
@@ -145,7 +147,10 @@ mod tests {
     fn resolves_explicit_import_and_fully_qualified() {
         let ws = ws_with(&[
             ("common.fidl", COMMON),
-            ("main.fidl", "package org.app\nimport org.common.Types from \"common.fidl\"\ninterface I {\n attribute Types.Mode m\n attribute org.common.Types.Point p\n}\n"),
+            (
+                "main.fidl",
+                "package org.app\nimport org.common.Types from \"common.fidl\"\ninterface I {\n attribute Types.Mode m\n attribute org.common.Types.Point p\n}\n",
+            ),
         ]);
         assert_eq!(target_fqn(&ws, "main.fidl", "Types.Mode").as_deref(), Some("org.common.Types.Mode"));
         assert_eq!(target_fqn(&ws, "main.fidl", "org.common.Types.Point").as_deref(), Some("org.common.Types.Point"));

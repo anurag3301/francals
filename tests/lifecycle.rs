@@ -49,7 +49,12 @@ fn indexes_workspace_folder_and_imports() {
     c.open(&uri, "franca", "package q\nimport p.* from \"a.fidl\"\n");
     let res = c.request("workspace/symbol", serde_json::json!({"query": "S"}));
     std::fs::remove_dir_all(&dir).unwrap();
-    assert!(res.as_array().unwrap().iter().any(|s| s["name"] == "S" && s["location"]["uri"].as_str().unwrap().ends_with("a.fidl")));
+    assert!(
+        res.as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["name"] == "S" && s["location"]["uri"].as_str().unwrap().ends_with("a.fidl"))
+    );
     c.shutdown();
 }
 

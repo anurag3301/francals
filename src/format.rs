@@ -232,7 +232,10 @@ mod tests {
     #[test]
     fn supports_tabs_and_crlf() {
         let o = FormattingOptions { tab_size: 4, insert_spaces: false, ..Default::default() };
-        assert_eq!(format_text("interface I {\r\nmethod m { }\r\n}\r\n", &o), "interface I {\r\n\tmethod m { }\r\n}\r\n");
+        assert_eq!(
+            format_text("interface I {\r\nmethod m { }\r\n}\r\n", &o),
+            "interface I {\r\n\tmethod m { }\r\n}\r\n"
+        );
     }
 
     #[test]
