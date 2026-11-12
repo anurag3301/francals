@@ -10,12 +10,15 @@ The grammars come from [tree-sitter-franca](https://github.com/anurag3301/tree-s
 |---|---|---|
 | Syntax diagnostics | yes | yes |
 | Unresolved names, missing imports | yes | yes |
+| Property value type checks | | yes |
 | Duplicate definitions | yes | |
 | Document and workspace symbols | yes | yes |
 | Go to definition (across imports) | yes | yes (specs, targets, properties, imports) |
 | Find references | yes (includes deployments) | yes |
 | Hover | yes (signature, `@description`, builtin types) | yes (property declarations, targets) |
-| Completion | keywords, types, qualified names, contract members | specs, properties, values, targets |
+| Completion | keywords with block snippets, types (with docs), qualified names, contract members | specs, properties, values, targets |
+| Document highlight | yes | yes |
+| Code actions | add missing import | add missing import |
 | Rename | yes (across files, includes deployments) | via the deployed declaration |
 | Formatting | yes | yes |
 
