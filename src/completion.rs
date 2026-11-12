@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, Documentation, MarkupContent, MarkupKind, Position, Url,
+    CompletionItem, CompletionItemKind, Documentation, InsertTextFormat, MarkupContent, MarkupKind, Position, Url,
 };
 
 use crate::fidl::{DeclKind, FidlIndex, Ref, RefKind, Segment};
@@ -239,6 +239,41 @@ pub(crate) fn partial_len(text: &str, offset: usize) -> usize {
     text[..offset].bytes().rev().take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'^').count()
 }
 
+/// Snippet bodies for keywords that start a block.
+fn keyword_snippet(word: &str) -> Option<&'static str> {
+    Some(match word {
+        "interface" => "interface ${1:Name} {\n\t$0\n}",
+        "typeCollection" => "typeCollection ${1:Name} {\n\t$0\n}",
+        "method" => "method ${1:name} {\n\tin {\n\t\t$2\n\t}\n\tout {\n\t\t$0\n\t}\n}",
+        "broadcast" => "broadcast ${1:name} {\n\tout {\n\t\t$0\n\t}\n}",
+        "attribute" => "attribute ${1:Type} ${2:name}",
+        "struct" => "struct ${1:Name} {\n\t$0\n}",
+        "union" => "union ${1:Name} {\n\t$0\n}",
+        "enumeration" => "enumeration ${1:Name} {\n\t$0\n}",
+        "typedef" => "typedef ${1:Name} is ${0:Type}",
+        "array" => "array ${1:Name} of ${0:Type}",
+        "map" => "map ${1:Name} { ${2:Key} to ${0:Value} }",
+        "define" => "define ${1:spec.Name} for interface ${2:pkg.Interface} {\n\t$0\n}",
+        _ => return None,
+    })
+}
+
+pub(crate) fn snippet_items(words: &[&str]) -> Vec<CompletionItem> {
+    words
+        .iter()
+        .map(|w| {
+            let snippet = keyword_snippet(w);
+            CompletionItem {
+                label: w.to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                insert_text: snippet.map(str::to_string),
+                insert_text_format: snippet.map(|_| InsertTextFormat::SNIPPET),
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn keyword_items(words: &[&str]) -> Vec<CompletionItem> {
     words
         .iter()
@@ -311,7 +346,7 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
     }
 
     if let Some(want) = type_context(&ctx) {
-        let mut items = if want == Want::Bases { Vec::new() } else { keyword_items(BASIC_TYPES) };
+        let mut items = if want == Want::Bases { Vec::new() } else { snippet_items(BASIC_TYPES) };
         items.extend(visible_decls(ws, uri, idx, scope, want));
         return items;
     }
@@ -323,9 +358,9 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
             if idx.package.is_some() {
                 kw.retain(|k| *k != "package");
             }
-            keyword_items(&kw)
+            snippet_items(&kw)
         }
-        (Block::Interface, None) => keyword_items(&[
+        (Block::Interface, None) => snippet_items(&[
             "version",
             "attribute",
             "method",
@@ -341,15 +376,15 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
             "map",
         ]),
         (Block::TypeCollection, None) => {
-            keyword_items(&["version", "const", "public", "array", "typedef", "struct", "union", "enumeration", "map"])
+            snippet_items(&["version", "const", "public", "array", "typedef", "struct", "union", "enumeration", "map"])
         }
-        (Block::Interface | Block::TypeCollection, Some("public")) => keyword_items(TYPE_DEF_KEYWORDS),
-        (Block::Method, None) => keyword_items(&["in", "out", "error"]),
-        (Block::Broadcast, None) => keyword_items(&["out"]),
-        (Block::Contract, None) => keyword_items(&["vars", "PSM"]),
-        (Block::Psm, None) => keyword_items(&["initial", "state"]),
-        (Block::State, None) => keyword_items(&["on"]),
-        (Block::State, Some("on")) => keyword_items(&["call", "respond", "error", "signal", "set", "update"]),
+        (Block::Interface | Block::TypeCollection, Some("public")) => snippet_items(TYPE_DEF_KEYWORDS),
+        (Block::Method, None) => snippet_items(&["in", "out", "error"]),
+        (Block::Broadcast, None) => snippet_items(&["out"]),
+        (Block::Contract, None) => snippet_items(&["vars", "PSM"]),
+        (Block::Psm, None) => snippet_items(&["initial", "state"]),
+        (Block::State, None) => snippet_items(&["on"]),
+        (Block::State, Some("on")) => snippet_items(&["call", "respond", "error", "signal", "set", "update"]),
         (Block::Psm, Some("initial")) | (Block::State, Some("->")) => members(ws, uri, idx, scope, &[DeclKind::State]),
         (Block::State, Some("call" | "respond" | "error" | "signal")) => {
             members(ws, uri, idx, scope, &[DeclKind::Method, DeclKind::Broadcast])
@@ -607,5 +642,14 @@ mod tests {
         let pt = items.iter().find(|i| i.label == "Pt").unwrap();
         let Some(Documentation::MarkupContent(m)) = &pt.documentation else { panic!("no docs") };
         assert!(m.value.contains("struct Pt") && m.value.contains("A point."), "{}", m.value);
+    }
+
+    #[test]
+    fn block_keywords_come_with_snippets() {
+        let items = snippet_items(&["method", "in"]);
+        assert_eq!(items[0].insert_text_format, Some(InsertTextFormat::SNIPPET));
+        assert!(items[0].insert_text.as_deref().unwrap().contains("${1:name}"));
+        assert!(items[1].insert_text.is_none());
+        assert!(keyword_items(&["method"])[0].insert_text.is_none());
     }
 }

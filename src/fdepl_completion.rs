@@ -2,7 +2,7 @@
 
 use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, Position, Url};
 
-use crate::completion::{Tok, keyword_items, lex, partial_len};
+use crate::completion::{Tok, keyword_items, lex, partial_len, snippet_items};
 use crate::fdepl::FdeplKind;
 use crate::fdepl_resolve::host_matches;
 use crate::fidl::DeclKind;
@@ -282,7 +282,7 @@ pub fn complete(ws: &Workspace, uri: &Url, pos: Position) -> Vec<CompletionItem>
                 if ws.fdepl.get(uri).is_some_and(|i| i.package.is_some()) {
                     kw.retain(|k| *k != "package");
                 }
-                keyword_items(&kw)
+                snippet_items(&kw)
             }
             Some("define" | "extends") => spec_names(ws),
             Some("for") if has_define => keyword_items(&["interface", "typeCollection"]),
