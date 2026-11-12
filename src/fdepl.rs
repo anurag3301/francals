@@ -82,6 +82,17 @@ pub struct FdeplRef {
     /// For properties: keyword of the element the property is set on.
     pub host: String,
     pub is_top_level: bool,
+    /// For properties: the assigned value, or the elements of an `{ a, b }` array.
+    pub values: Vec<PropValue>,
+    pub is_array: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct PropValue {
+    /// Grammar node kind: `integer`, `string`, `boolean`, `qualified_name`, `interface_reference`.
+    pub kind: String,
+    pub text: String,
+    pub span: Span,
 }
 
 impl FdeplRef {
@@ -124,6 +135,65 @@ impl FdeplIndex {
             s.start <= offset && offset <= s.end
         })
     }
+}
+
+/// Declared type of a specification property.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PropType {
+    Integer,
+    String,
+    Boolean,
+    Interface,
+    Enum(Vec<String>),
+    /// A named type that this server does not know about.
+    Other,
+}
+
+/// Parses the type out of a property declaration's `detail` (`Name: Type[] (flags)`).
+pub fn parse_property_type(detail: &str) -> Option<(PropType, bool)> {
+    let rest = detail.split_once(':')?.1.trim();
+    let (ty, tail) = if let Some(inner) = rest.strip_prefix('{') {
+        let (names, tail) = inner.split_once('}')?;
+        let names = names.split(',').map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect();
+        (PropType::Enum(names), tail)
+    } else {
+        let end = rest.find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '^')).unwrap_or(rest.len());
+        let ty = match &rest[..end] {
+            "Integer" => PropType::Integer,
+            "String" => PropType::String,
+            "Boolean" => PropType::Boolean,
+            "Interface" => PropType::Interface,
+            _ => PropType::Other,
+        };
+        (ty, &rest[end..])
+    };
+    Some((ty, tail.trim_start().starts_with("[]")))
+}
+
+/// Why the assigned values do not fit the declared type, if they do not.
+pub fn check_property_value(ty: &PropType, array: bool, r: &FdeplRef) -> Option<(Span, String)> {
+    let span = r.values.first()?.span.start..r.values.last()?.span.end;
+    if *ty == PropType::Other {
+        return None;
+    }
+    if array != r.is_array {
+        let msg = if array { "expects an array, e.g. `{ a, b }`" } else { "does not take an array" };
+        return Some((span, format!("Property `{}` {msg}", r.full_name())));
+    }
+    for v in &r.values {
+        let want = match ty {
+            PropType::Integer if v.kind != "integer" => "an Integer".to_string(),
+            PropType::String if v.kind != "string" => "a String".to_string(),
+            PropType::Boolean if v.kind != "boolean" => "a Boolean".to_string(),
+            PropType::Interface if v.kind != "interface_reference" => "an interface reference (`&name`)".to_string(),
+            PropType::Enum(names) if v.kind != "qualified_name" || !names.contains(&v.text) => {
+                format!("one of {}", names.join(", "))
+            }
+            _ => continue,
+        };
+        return Some((v.span.clone(), format!("Property `{}` expects {want}", r.full_name())));
+    }
+    None
 }
 
 #[derive(Clone, Default)]
@@ -198,6 +268,7 @@ impl<'a> Builder<'a> {
             }
             "property" => {
                 if let Some(n) = node.child_by_field_name("name") {
+                    let (values, is_array) = self.values(node.child_by_field_name("value"));
                     self.index.refs.push(FdeplRef {
                         segments: vec![segment(self.text(n), n.byte_range())],
                         kind: FdeplRefKind::Property,
@@ -205,6 +276,8 @@ impl<'a> Builder<'a> {
                         spec: ctx.spec,
                         host: ctx.host.clone(),
                         is_top_level: false,
+                        values,
+                        is_array,
                     });
                 }
                 self.visit_children(node, ctx);
@@ -217,6 +290,19 @@ impl<'a> Builder<'a> {
                 }
             }
             _ => self.visit_children(node, ctx),
+        }
+    }
+
+    fn values(&self, node: Option<Node>) -> (Vec<PropValue>, bool) {
+        let Some(node) = node else { return (Vec::new(), false) };
+        let one =
+            |n: Node| PropValue { kind: n.kind().to_string(), text: self.text(n).to_string(), span: n.byte_range() };
+        if node.kind() == "value_array" {
+            let mut cursor = node.walk();
+            let items = node.named_children(&mut cursor).filter(|c| !c.is_extra()).map(one).collect();
+            (items, true)
+        } else {
+            (vec![one(node)], false)
         }
     }
 
@@ -280,6 +366,8 @@ impl<'a> Builder<'a> {
             spec: ctx.spec,
             host: ctx.host.clone(),
             is_top_level: top,
+            values: Vec::new(),
+            is_array: false,
         });
         Some(self.index.refs.len() - 1)
     }
@@ -503,5 +591,21 @@ mod tests {
         let idx = FdeplIndex::build(&Document::new(Lang::Fdepl, src.into(), 0));
         let r = idx.refs.iter().find(|r| r.kind == FdeplRefKind::InterfaceValue).unwrap();
         assert_eq!(r.full_name(), "b.Iface");
+    }
+
+    #[test]
+    fn parses_and_checks_property_types() {
+        let (ty, arr) = parse_property_type("Mode: { fast, slow }[] (default: fast)").unwrap();
+        assert_eq!((&ty, arr), (&PropType::Enum(vec!["fast".into(), "slow".into()]), true));
+        assert_eq!(parse_property_type("Port: Integer (optional)"), Some((PropType::Integer, false)));
+        assert_eq!(parse_property_type("X: Custom"), Some((PropType::Other, false)));
+        let src = "package a\ndefine x.S for interface b.I {\n A = \"s\"\n B = { 1, 2 }\n C = 1\n}\n";
+        let idx = FdeplIndex::build(&Document::new(Lang::Fdepl, src.into(), 0));
+        let r = |n: &str| idx.refs.iter().find(|r| r.full_name() == n).unwrap();
+        assert!(check_property_value(&PropType::Integer, false, r("A")).unwrap().1.contains("an Integer"));
+        assert!(check_property_value(&PropType::Integer, false, r("B")).unwrap().1.contains("does not take"));
+        assert!(check_property_value(&PropType::Integer, true, r("C")).unwrap().1.contains("expects an array"));
+        assert!(check_property_value(&PropType::Integer, true, r("B")).is_none());
+        assert!(check_property_value(&PropType::Boolean, false, r("C")).is_some());
     }
 }

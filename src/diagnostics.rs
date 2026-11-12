@@ -103,9 +103,18 @@ fn fdepl_semantic(ws: &Workspace, uri: &Url, doc: &Document) -> Vec<Diagnostic> 
     let has_external = idx.imports.iter().any(|i| i.is_external());
 
     for (i, r) in idx.refs.iter().enumerate() {
-        if ws.resolve_fdepl(uri, i).is_some() {
+        let resolved = ws.resolve_fdepl(uri, i);
+        if let Some(FdeplTarget::Property(u, d)) = &resolved
+            && let Some(detail) = ws.fdepl.get(u).and_then(|x| x.decls.get(*d)).map(|d| d.detail.as_str())
+            && let Some((ty, array)) = crate::fdepl::parse_property_type(detail)
+            && let Some((span, message)) = crate::fdepl::check_property_value(&ty, array, r)
+        {
+            out.push(diag(doc, span, DiagnosticSeverity::WARNING, message));
+        }
+        if resolved.is_some() {
             continue;
         }
+
         let name = r.full_name();
         let message = match r.kind {
             FdeplRefKind::Spec if !has_external => format!("Cannot resolve specification `{name}`"),
@@ -317,5 +326,12 @@ mod tests {
             "package d\nimport \"platform:/plugin/x/spec.fdepl\"\ndefine other.Spec for interface p.I {\n Whatever = 1\n}\n",
         );
         assert!(msgs.is_empty(), "{msgs:?}");
+    }
+
+    #[test]
+    fn reports_mistyped_property_values() {
+        let msgs = fdepl_messages("package d\ndefine s.Spec for interface p.I {\n Port = \"x\"\n}\n");
+        assert_eq!(msgs, ["Property `Port` expects an Integer"]);
+        assert!(fdepl_messages("package d\ndefine s.Spec for interface p.I {\n Port = 0x10\n}\n").is_empty());
     }
 }
