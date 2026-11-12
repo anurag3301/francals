@@ -600,7 +600,8 @@ mod tests {
     fn declarations_carry_documentation() {
         let uri = Url::parse("file:///ws/m.fidl").unwrap();
         let mut ws = Workspace::default();
-        let src = "package a\ninterface I {\n <** @description: A point. **>\n struct Pt { Int8 x }\n attribute Pt p\n}\n";
+        let src =
+            "package a\ninterface I {\n <** @description: A point. **>\n struct Pt { Int8 x }\n attribute Pt p\n}\n";
         ws.open(uri.clone(), "franca", src.into(), 1);
         let items = complete(&ws, &uri, Position::new(4, 11));
         let pt = items.iter().find(|i| i.label == "Pt").unwrap();

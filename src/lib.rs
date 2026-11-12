@@ -1,3 +1,4 @@
+pub mod actions;
 pub mod check;
 pub mod completion;
 pub mod diagnostics;

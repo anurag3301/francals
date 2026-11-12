@@ -81,6 +81,7 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 document_highlight_provider: Some(OneOf::Left(true)),
                 workspace_symbol_provider: Some(OneOf::Left(true)),
                 ..Default::default()
@@ -171,6 +172,11 @@ impl LanguageServer for Backend {
         let p = params.text_document_position_params;
         let ws = self.ws.read().unwrap();
         Ok(Some(navigation::highlights(&ws, &p.text_document.uri, p.position)))
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        let ws = self.ws.read().unwrap();
+        Ok(Some(crate::actions::code_actions(&ws, &params.text_document.uri, params.range)))
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
